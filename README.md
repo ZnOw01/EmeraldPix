@@ -2,7 +2,7 @@
 
 [![License: GPL-3.0-only](https://img.shields.io/badge/license-GPL--3.0--only-blue.svg)](LICENSE)
 
-Screenshot extension for Chrome and Brave. Captures full pages or selected areas with smart scrolling, exports to PNG, JPG or PDF, and works entirely locally — no account, no servers, no uploads.
+Screenshot extension. Captures full pages or selected areas with smart scrolling, exports to PNG, JPG or PDF, and works entirely locally — no account, no servers, no uploads.
 
 ![Capture in progress](docs/screenshots/active-screenshot.png)
 ![Capture complete](docs/screenshots/finished-screenshot.png)
