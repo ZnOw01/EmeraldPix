@@ -2,7 +2,7 @@
 
 [![License: GPL-3.0-only](https://img.shields.io/badge/license-GPL--3.0--only-blue.svg)](LICENSE)
 
-Chrome/Brave extension that captures full pages or selected areas and exports to PNG, JPG, or PDF — entirely local, no account, no uploads.
+Extension that captures full pages or selected areas and exports to PNG, JPG, or PDF — entirely local, no account, no uploads.
 
 ![Capture in progress](docs/screenshots/active-screenshot.png)
 ![Capture complete](docs/screenshots/screenshot-in-progress.png)
@@ -66,4 +66,3 @@ src/
 ## Changelog
 
 See [CHANGES.md](CHANGES.md).
-
