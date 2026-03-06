@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EmeraldPix</title>
+  <script>
+    // Apply theme before first paint to avoid flash when popup opens.
+    (function () {
+      try {
+        var key = 'emeraldpix-theme';
+        var stored = localStorage.getItem(key);
+        var theme = stored === 'light' || stored === 'dark' || stored === 'auto' ? stored : 'auto';
+        var effective = theme === 'auto'
+          ? (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+          : theme;
+        document.documentElement.setAttribute('data-theme', effective);
+      } catch (_) {
+        document.documentElement.setAttribute('data-theme', 'light');
+      }
+    })();
+  </script>
+</head>
+
+<body>
+  <div id="app"></div>
+  <script type="module" src="/src/popup/main.ts"></script>
+</body>
+
+</html>

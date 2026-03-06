@@ -1,0 +1,45 @@
+{
+  "name": "EmeraldPix",
+  "description": "Capture pages in Chrome and Brave.",
+  "version": "3.3.0",
+  "manifest_version": 3,
+  "minimum_chrome_version": "120",
+  "action": {
+    "default_title": "EmeraldPix",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icon-16x16.png",
+      "19": "icon-19x19.png",
+      "48": "icon-48x48.png"
+    }
+  },
+  "background": {
+    "service_worker": "assets/service_worker.js",
+    "type": "module"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  },
+  "commands": {
+    "_execute_action": {
+      "suggested_key": {
+        "default": "Alt+Shift+P"
+      }
+    }
+  },
+  "permissions": [
+    "activeTab",
+    "alarms",
+    "downloads",
+    "offscreen",
+    "scripting",
+    "storage",
+    "tabs"
+  ],
+  "host_permissions": ["<all_urls>"],
+  "icons": {
+    "16": "icon-16x16.png",
+    "48": "icon-48x48.png",
+    "128": "icon-128x128.png"
+  }
+}
