@@ -1,0 +1,31 @@
+full-page-screen-capture.pem
+full-page-screen-capture.zip
+.DS_Store
+dist/
+node_modules/
+*.tsbuildinfo
+coverage/
+test-results/
+playwright-report/
+.npm-cache/
+
+# Test files — not for distribution
+tests/
+*.test.ts
+*.test.mjs
+*.spec.ts
+*.spec.mjs
+playwright.config.ts
+vitest.config.ts
+
+# Environment files — never commit real secrets
+.env
+.env.local
+.env.*.local
+backend/license-api/.env
+
+# SQLite database files — may contain license keys
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.db

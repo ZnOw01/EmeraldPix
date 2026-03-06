@@ -1,0 +1,28 @@
+# Normalize all text files to LF in the repo (no CRLF noise on Windows)
+* text=auto eol=lf
+
+# Binary files — never touch line endings
+*.png binary
+*.ico binary
+*.gif binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.otf binary
+*.eot binary
+*.zip binary
+*.sqlite binary
+*.sqlite-shm binary
+*.sqlite-wal binary
+
+# Export ignore (not included in git archive/releases)
+.gitattributes export-ignore
+.gitignore export-ignore
+coverage/ export-ignore
+test-results/ export-ignore
+playwright-report/ export-ignore
+docs/ export-ignore
+scripts/ export-ignore
