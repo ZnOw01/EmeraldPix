@@ -56,6 +56,7 @@ export default defineConfig(({ mode }) => {
       outDir: 'dist',
       emptyOutDir: true,
       sourcemap: mode === 'development',
+      modulePreload: { polyfill: false },
       watch: process.env.VITE_BUILD_WATCH === 'true' ? {} : null,
       rollupOptions: {
         input: {
