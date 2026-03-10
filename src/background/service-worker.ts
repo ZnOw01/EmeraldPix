@@ -206,14 +206,11 @@ function sanitizeCaptureOptions(input: Partial<CaptureOptions>): CaptureOptions 
 
 function sanitizeExportOptions(input: Partial<ExportOptions>): ExportOptions {
   const format = input.format === 'jpg' || input.format === 'pdf' ? input.format : 'png';
-  const jpgQuality = isPositiveFiniteNumber(input.jpgQuality)
-    ? Math.min(1, Math.max(0, input.jpgQuality))
-    : DEFAULT_EXPORT_OPTIONS.jpgQuality;
   return {
     ...DEFAULT_EXPORT_OPTIONS,
     ...input,
     format,
-    jpgQuality
+    jpgQuality: DEFAULT_EXPORT_OPTIONS.jpgQuality
   };
 }
 
