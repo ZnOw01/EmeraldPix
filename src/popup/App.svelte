@@ -18,9 +18,9 @@
     DEFAULT_EXPORT_OPTIONS
   } from '../shared/constants';
   import { formatMessage } from '../shared/format-message';
+  import { AREA_SELECTION_CANCELLED } from '../shared/utils';
   import {
     initTheme,
-    getCurrentTheme,
     toggleTheme as toggleThemeSetting,
     resolveEffectiveTheme,
     type Theme
@@ -98,6 +98,7 @@
 
   let showCaptureButton = true;
   let showRetryButton = false;
+  let lastCaptureType: 'full' | 'area' = 'full';
   let captureRunning = false;
 
   let smartScroll = DEFAULT_CAPTURE_OPTIONS.enableSmartScroll;
@@ -375,11 +376,12 @@
   }
 
   async function startCapture(): Promise<void> {
-    await saveOptionsFromUI();
+    lastCaptureType = 'full';
     setCaptureRunning(true);
     showRetryButton = false;
     errorAlertVisible = false;
     showCaptureButton = true;
+    await saveOptionsFromUI();
 
     try {
       const response = await sendMessage<StartCaptureData>({ type: 'start-capture' });
@@ -410,16 +412,17 @@
   }
 
   async function startAreaCapture(): Promise<void> {
-    await saveOptionsFromUI();
+    lastCaptureType = 'area';
     setCaptureRunning(true);
     showRetryButton = false;
     errorAlertVisible = false;
     showCaptureButton = true;
+    await saveOptionsFromUI();
 
     try {
       const response = await sendMessage<StartCaptureData>({ type: 'start-area-capture' });
       if (!response.ok || !response.data) {
-        if (!response.ok && response.error === 'Area selection cancelled.') {
+        if (!response.ok && response.error === AREA_SELECTION_CANCELLED) {
           render({ ...IDLE_STATUS });
           return;
         }
@@ -577,7 +580,7 @@
       applyExportOptionsToUI(exportOptions);
       await loadCurrentCaptureStatus();
 
-      theme = await getCurrentTheme();
+      theme = await initTheme();
       updateThemeIcon();
     })();
 
@@ -644,7 +647,7 @@
     </div>
   </header>
 
-  <section class="status-panel" aria-live="polite" aria-atomic="true">
+  <section class="status-panel">
     <p class="sr-only" role="status" aria-live="polite">{screenReaderStatus}</p>
     <div class="status-row">
       <span class="status-text">{statusText}</span>
@@ -743,7 +746,7 @@
   {/if}
 
   {#if showRetryButton}
-    <button class="capture-btn" type="button" on:click={startCapture}>
+    <button class="capture-btn" type="button" on:click={lastCaptureType === 'area' ? startAreaCapture : startCapture}>
       <!-- Retry / refresh icon -->
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/>
