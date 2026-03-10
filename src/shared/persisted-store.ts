@@ -4,6 +4,7 @@ import type {
   DownloadOptions,
   ExportOptions
 } from './messages';
+import { getErrorMessage } from './utils';
 
 interface PersistedState {
   captureOptions: CaptureOptions;
@@ -25,13 +26,6 @@ const STORE_NAME = 'settings';
 const DB_VERSION = 1;
 
 let dbPromise: Promise<IDBPDatabase<EmeraldPixDbSchema>> | null = null;
-
-function getErrorMessage(error: unknown): string {
-  if (error instanceof Error && error.message) {
-    return error.message;
-  }
-  return String(error ?? 'Unknown error');
-}
 
 function logStorageWarning(scope: string, error: unknown): void {
   console.warn(`[PersistedStore] ${scope}: ${getErrorMessage(error)}`);
@@ -96,6 +90,15 @@ export async function readPersistedValue<K extends PersistedKey>(
     }
   } catch (error) {
     logStorageWarning(`IndexedDB read failed for key "${key}"`, error);
+  }
+
+  // IDB returned nothing or failed — fall back to chrome.storage mirror
+  try {
+    const result = await chrome.storage.local.get(key);
+    const value = result[key] as PersistedState[K] | undefined;
+    return value;
+  } catch (error) {
+    logStorageWarning(`chrome.storage fallback read failed for key "${key}"`, error);
   }
 
   return undefined;

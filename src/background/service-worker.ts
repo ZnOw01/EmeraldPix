@@ -8,6 +8,11 @@ import type {
 } from '../shared/messages';
 import { readPersistedValue } from '../shared/persisted-store';
 import {
+  getErrorMessage,
+  isPositiveFiniteNumber,
+  validateTilePayload
+} from '../shared/utils';
+import {
   CAPTURE_PROTOCOLS,
   BLOCKED_URLS,
   BLOCKED_HTTP_URLS,
@@ -100,13 +105,6 @@ let finalizingJobId: string | null = null;
 const OFFSCREEN_IDLE_CLOSE_MS = 20_000;
 let offscreenCloseTimer: ReturnType<typeof setTimeout> | null = null;
 
-function getErrorMessage(error: unknown): string {
-  if (error instanceof Error && error.message) {
-    return error.message;
-  }
-  return String(error ?? 'Unknown error');
-}
-
 function updateStatus(next: Partial<CaptureStatus>): void {
   status = { ...status, ...next };
   void chrome.runtime.sendMessage({ type: 'capture-status', status }).catch(() => undefined);
@@ -114,40 +112,6 @@ function updateStatus(next: Partial<CaptureStatus>): void {
 
 function clamp(value: number, min = 0, max = 1): number {
   return Math.min(max, Math.max(min, value));
-}
-
-function isFiniteNumber(value: unknown): value is number {
-  return typeof value === 'number' && Number.isFinite(value);
-}
-
-function isPositiveFiniteNumber(value: unknown): value is number {
-  return isFiniteNumber(value) && value > 0;
-}
-
-function isNonNegativeFiniteNumber(value: unknown): value is number {
-  return isFiniteNumber(value) && value >= 0;
-}
-
-function validateTilePayload(tile: CaptureTilePayload): string | null {
-  if (!isFiniteNumber(tile.complete)) {
-    return '`complete` must be a finite number.';
-  }
-  if (!isNonNegativeFiniteNumber(tile.x) || !isNonNegativeFiniteNumber(tile.y)) {
-    return '`x`/`y` must be finite numbers >= 0.';
-  }
-  if (!isPositiveFiniteNumber(tile.windowWidth)) {
-    return '`windowWidth` must be a finite number > 0.';
-  }
-  if (tile.windowHeight !== undefined && !isPositiveFiniteNumber(tile.windowHeight)) {
-    return '`windowHeight` must be a finite number > 0 when provided.';
-  }
-  if (!isPositiveFiniteNumber(tile.totalWidth) || !isPositiveFiniteNumber(tile.totalHeight)) {
-    return '`totalWidth`/`totalHeight` must be finite numbers > 0.';
-  }
-  if (!isPositiveFiniteNumber(tile.devicePixelRatio)) {
-    return '`devicePixelRatio` must be a finite number > 0.';
-  }
-  return null;
 }
 
 function formatSeconds(ms: number): string {
@@ -242,11 +206,14 @@ function sanitizeCaptureOptions(input: Partial<CaptureOptions>): CaptureOptions 
 
 function sanitizeExportOptions(input: Partial<ExportOptions>): ExportOptions {
   const format = input.format === 'jpg' || input.format === 'pdf' ? input.format : 'png';
+  const jpgQuality = isPositiveFiniteNumber(input.jpgQuality)
+    ? Math.min(1, Math.max(0, input.jpgQuality))
+    : DEFAULT_EXPORT_OPTIONS.jpgQuality;
   return {
     ...DEFAULT_EXPORT_OPTIONS,
     ...input,
     format,
-    jpgQuality: DEFAULT_EXPORT_OPTIONS.jpgQuality
+    jpgQuality
   };
 }
 
@@ -272,11 +239,10 @@ function addFilenameSuffix(
   extension: ExportOptions['format'],
   totalCount: number
 ): string {
-  const ext = extension === 'jpg' ? 'jpg' : extension;
   if (totalCount <= 1 || index === 0) {
-    return `${filename}.${ext}`;
+    return `${filename}.${extension}`;
   }
-  return `${filename}-${index + 1}.${ext}`;
+  return `${filename}-${index + 1}.${extension}`;
 }
 
 async function ensureOffscreenDocument(): Promise<void> {
