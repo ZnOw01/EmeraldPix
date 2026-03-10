@@ -22,7 +22,6 @@
   import {
     initTheme,
     toggleTheme as toggleThemeSetting,
-    resolveEffectiveTheme,
     type Theme
   } from '../shared/theme';
 
@@ -153,7 +152,7 @@
   }
 
   function updateThemeIcon(): void {
-    effectiveTheme = resolveEffectiveTheme(theme);
+    effectiveTheme = theme;
   }
 
   async function toggleTheme(): Promise<void> {
@@ -543,14 +542,6 @@
 
     let disposed = false;
 
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-    const mediaHandler = () => {
-      if (theme === 'auto') {
-        updateThemeIcon();
-      }
-    };
-    mediaQuery.addEventListener('change', mediaHandler);
-
     const runtimeListener = (message: {
       type?: string;
       status?: CaptureStatus;
@@ -587,7 +578,6 @@
     return () => {
       disposed = true;
       stopPolling();
-      mediaQuery.removeEventListener('change', mediaHandler);
       chrome.runtime.onMessage.removeListener(runtimeListener);
     };
   });
