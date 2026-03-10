@@ -1,10 +1,10 @@
 // Shared theme helpers for extension pages.
-export type Theme = 'light' | 'dark' | 'auto';
+export type Theme = 'light' | 'dark';
 
 export const THEME_KEY = 'emeraldpix-theme';
 
 function isTheme(value: unknown): value is Theme {
-  return value === 'light' || value === 'dark' || value === 'auto';
+  return value === 'light' || value === 'dark';
 }
 
 function persistThemeLocally(theme: Theme): void {
@@ -24,19 +24,6 @@ function readThemeFromLocalStorage(): Theme | undefined {
   }
 }
 
-export function getSystemTheme(): 'light' | 'dark' {
-  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-}
-
-export function resolveEffectiveTheme(theme: Theme): 'light' | 'dark' {
-  return theme === 'auto' ? getSystemTheme() : theme;
-}
-
-export function getInitialThemeSync(): 'light' | 'dark' {
-  const fromStorage = readThemeFromLocalStorage() ?? 'auto';
-  return resolveEffectiveTheme(fromStorage);
-}
-
 export async function getCurrentTheme(): Promise<Theme> {
   try {
     const result = await chrome.storage.local.get(THEME_KEY);
@@ -49,11 +36,11 @@ export async function getCurrentTheme(): Promise<Theme> {
     // Fall back to local storage.
   }
 
-  return readThemeFromLocalStorage() ?? 'auto';
+  return readThemeFromLocalStorage() ?? 'light';
 }
 
 export async function applyTheme(theme: Theme): Promise<void> {
-  document.documentElement.dataset.theme = resolveEffectiveTheme(theme);
+  document.documentElement.dataset.theme = theme;
 
   let metaThemeColor = document.querySelector('meta[name="theme-color"]');
   if (!metaThemeColor) {
@@ -62,10 +49,7 @@ export async function applyTheme(theme: Theme): Promise<void> {
     document.head.appendChild(metaThemeColor);
   }
 
-  metaThemeColor.setAttribute(
-    'content',
-    resolveEffectiveTheme(theme) === 'dark' ? '#1a1a1a' : '#ffffff'
-  );
+  metaThemeColor.setAttribute('content', theme === 'dark' ? '#1a1a1a' : '#ffffff');
 }
 
 export async function setTheme(theme: Theme): Promise<void> {
@@ -76,7 +60,7 @@ export async function setTheme(theme: Theme): Promise<void> {
 
 export async function toggleTheme(): Promise<Theme> {
   const current = await getCurrentTheme();
-  const next: Theme = resolveEffectiveTheme(current) === 'dark' ? 'light' : 'dark';
+  const next: Theme = current === 'dark' ? 'light' : 'dark';
   await setTheme(next);
   return next;
 }

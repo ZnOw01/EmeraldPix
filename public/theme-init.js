@@ -3,11 +3,8 @@
   try {
     var key = 'emeraldpix-theme';
     var stored = localStorage.getItem(key);
-    var theme = stored === 'light' || stored === 'dark' || stored === 'auto' ? stored : 'auto';
-    var effective = theme === 'auto'
-      ? (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
-      : theme;
-    document.documentElement.setAttribute('data-theme', effective);
+    var theme = stored === 'light' || stored === 'dark' ? stored : 'light';
+    document.documentElement.setAttribute('data-theme', theme);
   } catch (_) {
     document.documentElement.setAttribute('data-theme', 'light');
   }

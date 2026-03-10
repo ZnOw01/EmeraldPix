@@ -10,7 +10,8 @@ import { readPersistedValue } from '../shared/persisted-store';
 import {
   getErrorMessage,
   isPositiveFiniteNumber,
-  validateTilePayload
+  validateTilePayload,
+  AREA_SELECTION_CANCELLED
 } from '../shared/utils';
 import {
   CAPTURE_PROTOCOLS,
@@ -571,7 +572,7 @@ async function startAreaCapture(): Promise<RuntimeResponse<StartCaptureResponse>
     })) as RuntimeResponse<VisibleAreaSelection>;
 
     if (!selectionResponse.ok || !selectionResponse.data) {
-      throw new Error(selectionResponse.ok ? 'Area selection cancelled.' : selectionResponse.error);
+      throw new Error(selectionResponse.ok ? AREA_SELECTION_CANCELLED : selectionResponse.error);
     }
 
     updateStatus({
@@ -635,7 +636,7 @@ async function startAreaCapture(): Promise<RuntimeResponse<StartCaptureResponse>
     return { ok: true, data: { status, alreadyRunning: false } };
   } catch (error) {
     const message = getErrorMessage(error);
-    if (message === 'Area selection cancelled.') {
+    if (message === AREA_SELECTION_CANCELLED) {
       clearActiveJobTimeout();
       activeJob = null;
       scheduleOffscreenClose();
@@ -646,7 +647,7 @@ async function startAreaCapture(): Promise<RuntimeResponse<StartCaptureResponse>
         downloadedCount: 0,
         totalCount: 0
       };
-      return { ok: false, error: 'Area selection cancelled.' };
+      return { ok: false, error: AREA_SELECTION_CANCELLED };
     }
     await failActiveJob(message);
     return { ok: false, error: message };

@@ -39,12 +39,16 @@ export default defineConfig(({ mode }) => {
     plugins: [
       svelte(),
       buildMetaPlugin(buildId),
-      visualizer({
-        filename: './dist/bundle-analysis.html',
-        open: false,
-        gzipSize: true,
-        brotliSize: true
-      })
+      ...(mode === 'development'
+        ? [
+            visualizer({
+              filename: './dist/bundle-analysis.html',
+              open: false,
+              gzipSize: true,
+              brotliSize: true
+            })
+          ]
+        : [])
     ],
     define: {
       __DEV_MODE__: mode === 'development',
