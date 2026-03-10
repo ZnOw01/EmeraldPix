@@ -25,10 +25,6 @@
     type Theme
   } from '../shared/theme';
 
-  declare const __APP_VERSION__: string;
-  declare const __BUILD_ID__: string;
-  declare const __DEV_MODE__: boolean;
-
   interface StartCaptureData {
     status: CaptureStatus;
     alreadyRunning: boolean;
