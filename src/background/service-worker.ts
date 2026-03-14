@@ -271,7 +271,7 @@ async function ensureOffscreenDocument(): Promise<void> {
   // Guard clause: check if chrome.offscreen API is available
   if (typeof chrome.offscreen === 'undefined') {
     throw new Error(
-      'chrome.offscreen API is not available. This extension requires Chrome 120 or later. ' +
+      'The offscreen document API is not available. This extension requires a compatible Chromium-based browser version 120 or later. ' +
         'Please update your browser to use EmeraldPix.'
     );
   }
@@ -555,7 +555,7 @@ async function startAreaCapture(): Promise<RuntimeResponse<StartCaptureResponse>
     return { ok: false, error: 'No active tab found.' };
   }
   if (!isCapturableUrl(tab.url)) {
-    return { ok: false, error: 'This URL cannot be captured by Chrome extension policy.' };
+    return { ok: false, error: 'This URL cannot be captured by browser extension policy.' };
   }
 
   const job: ActiveJob = {
@@ -696,7 +696,7 @@ async function startCaptureForTab(tabId?: number): Promise<RuntimeResponse<Start
   }
 
   if (!isCapturableUrl(tab.url)) {
-    return { ok: false, error: 'This URL cannot be captured by Chrome extension policy.' };
+    return { ok: false, error: 'This URL cannot be captured by browser extension policy.' };
   }
   const captureOptions = await loadCaptureOptions();
 

@@ -19,7 +19,7 @@ npm install
 npm run build
 ```
 
-Open `edge://extensions`, `chrome://extensions`, or `brave://extensions`, enable **Developer mode**, click **Load unpacked** and select the `dist/` folder.
+Open your browser's extensions page, enable **Developer mode**, click **Load unpacked** and select the `dist/` folder.
 
 ## Development
 
@@ -63,7 +63,7 @@ src/
 | `storage`            | Persist settings                        |
 | `tabs` / `activeTab` | Read active tab URL and capture state   |
 
-`chrome://`, `edge://` and Chrome Web Store pages cannot be captured.
+Internal browser pages and extension marketplace pages cannot be captured.
 
 ## Changelog
 

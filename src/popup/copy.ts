@@ -31,7 +31,7 @@ export const POPUP_COPY = {
   'popup.settings.appearance': 'Appearance',
   'popup.settings.askWhereToSave': 'Force save dialog',
   'popup.settings.askWhereToSaveHelp':
-    "Force Chrome's save dialog before each capture. If this is off, Chrome may still ask when its own 'Ask where to save each file' setting is enabled.",
+    "Force the browser save dialog before each capture. If this is off, your browser may still ask when its own 'Ask where to save each file' setting is enabled.",
   'popup.settings.capture': 'Capture',
   'popup.settings.jpgQuality': 'JPG quality',
   'popup.settings.jpgQualityHelp': 'Controls compression for JPG exports.',

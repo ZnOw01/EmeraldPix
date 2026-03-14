@@ -542,8 +542,19 @@
     closeSettings();
   }
 
+  function getDownloadsPageUrl(): string {
+    const userAgent = navigator.userAgent;
+    if (userAgent.includes('Edg/')) {
+      return 'edge://downloads/';
+    }
+    if (userAgent.includes('Brave/')) {
+      return 'brave://downloads/';
+    }
+    return 'chrome://downloads/';
+  }
+
   function handleOpenDownloads(): void {
-    chrome.tabs.create({ url: 'chrome://downloads/' });
+    chrome.tabs.create({ url: getDownloadsPageUrl() });
   }
 
   onMount(() => {
