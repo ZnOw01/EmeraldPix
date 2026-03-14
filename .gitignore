@@ -1,6 +1,7 @@
 full-page-screen-capture.pem
 full-page-screen-capture.zip
 .DS_Store
+Thumbs.db
 dist/
 node_modules/
 *.tsbuildinfo
@@ -8,6 +9,8 @@ coverage/
 test-results/
 playwright-report/
 .npm-cache/
+*.log
+logs/
 
 # Environment files — never commit real secrets
 .env

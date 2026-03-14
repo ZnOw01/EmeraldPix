@@ -186,6 +186,19 @@ async function waitForDownloadedFile(
   throw new Error('Timed out waiting for downloaded artifact.');
 }
 
+async function readPngDimensions(filePath: string): Promise<{ width: number; height: number }> {
+  const { readFile } = await import('node:fs/promises');
+  const buffer = await readFile(filePath);
+  const signature = buffer.subarray(0, 8).toString('hex');
+  if (signature !== '89504e470d0a1a0a') {
+    throw new Error(`Expected a PNG file, got signature ${signature}.`);
+  }
+  return {
+    width: buffer.readUInt32BE(16),
+    height: buffer.readUInt32BE(20)
+  };
+}
+
 async function runCaptureAndAssertDownload(
   harness: ExtensionHarness,
   fixtureUrl: string
@@ -236,6 +249,11 @@ test.describe('ScreenCap extension e2e', () => {
       expect(downloaded.filename.toLowerCase()).toContain('screenshot_');
       expect(downloaded.filename.toLowerCase().endsWith('.png')).toBeTruthy();
       expect(downloaded.size).toBeGreaterThan(0);
+
+      // The fixture has 14 × 500 px sections — the PNG must be taller than a single viewport
+      const dimensions = await readPngDimensions(join(harness.downloadsDir, downloaded.filename));
+      expect(dimensions.height).toBeGreaterThan(2000);
+      expect(dimensions.width).toBeGreaterThan(400);
     } finally {
       await closeHarness(harness);
       await new Promise<void>((resolve) => fixture.server.close(() => resolve()));
@@ -250,6 +268,23 @@ test.describe('ScreenCap extension e2e', () => {
       const downloaded = await runCaptureAndAssertDownload(harness, fixtureUrl);
       expect(downloaded.filename.toLowerCase().endsWith('.png')).toBeTruthy();
       expect(downloaded.size).toBeGreaterThan(0);
+    } finally {
+      await closeHarness(harness);
+      await new Promise<void>((resolve) => fixture.server.close(() => resolve()));
+    }
+  });
+
+  test('captures content from an internal scroll container beyond the visible region', async () => {
+    const fixture = await startFixtureServer();
+    const harness = await launchHarness();
+    try {
+      const fixtureUrl = `${fixture.origin}/container-scroll.html`;
+      const downloaded = await runCaptureAndAssertDownload(harness, fixtureUrl);
+      expect(downloaded.filename.toLowerCase().endsWith('.png')).toBeTruthy();
+
+      const dimensions = await readPngDimensions(join(harness.downloadsDir, downloaded.filename));
+      expect(dimensions.height).toBeGreaterThan(2000);
+      expect(dimensions.width).toBeGreaterThan(500);
     } finally {
       await closeHarness(harness);
       await new Promise<void>((resolve) => fixture.server.close(() => resolve()));

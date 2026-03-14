@@ -6,12 +6,10 @@
  * that occur when a file:// URL is loaded inside page.evaluate().
  */
 import { chromium } from 'playwright';
-import { readFileSync, existsSync } from 'node:fs';
-import { resolve, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { readFileSync, existsSync, mkdirSync } from 'node:fs';
+import { resolve } from 'node:path';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const ROOT = resolve(__dirname, '..');
+const ROOT = resolve(import.meta.dirname, '..');
 
 const sizes = [16, 19, 48, 128];
 
@@ -38,16 +36,18 @@ const browser = await chromium.launch();
 {
   const page = await browser.newPage();
   await page.setViewportSize({ width: 700, height: 260 });
-  const cards = sizes.map(s => {
-    const display = Math.max(s, 48);
-    return `<div class="card">
+  const cards = sizes
+    .map((s) => {
+      const display = Math.max(s, 48);
+      return `<div class="card">
       <div class="checker">
         <img src="${dataUrls[s]}" width="${display}" height="${display}"
              style="image-rendering:pixelated;display:block">
       </div>
       <span>${s}&times;${s}</span>
     </div>`;
-  }).join('');
+    })
+    .join('');
   await page.setContent(`<!DOCTYPE html><html><head><meta charset="utf-8"><style>
     body { margin:24px; font-family:sans-serif; background:#f0f0f0;
            display:flex; gap:24px; align-items:flex-end; }
@@ -56,6 +56,8 @@ const browser = await chromium.launch();
     .checker { background:repeating-conic-gradient(#ccc 0% 25%,#fff 0% 50%)
                0 0/10px 10px; padding:12px; border-radius:8px; display:inline-block; }
   </style></head><body>${cards}</body></html>`);
+  const distDir = resolve(ROOT, 'dist');
+  if (!existsSync(distDir)) mkdirSync(distDir, { recursive: true });
   await page.screenshot({ path: resolve(ROOT, 'dist', 'icon-preview.png') });
   await page.close();
   console.log('✓ Preview saved → dist/icon-preview.png');
@@ -73,14 +75,15 @@ const browser = await chromium.launch();
   const result = await page.evaluate(() => {
     const img = document.getElementById('icon');
     const canvas = document.createElement('canvas');
-    canvas.width = 128; canvas.height = 128;
+    canvas.width = 128;
+    canvas.height = 128;
     const ctx = canvas.getContext('2d');
     ctx.drawImage(img, 0, 0);
     const px = (x, y) => Array.from(ctx.getImageData(x, y, 1, 1).data);
     return {
-      topLeftCorner: px(2, 2),   // Outside rounded-rect → transparent
+      topLeftCorner: px(2, 2), // Outside rounded-rect → transparent
       bgTopCenter: px(64, 10), // Inside background → brand green
-      imgCenter: px(64, 64), // Camera body centre
+      imgCenter: px(64, 64) // Camera body centre
     };
   });
 
@@ -94,18 +97,20 @@ const browser = await chromium.launch();
   };
 
   let allOk = true;
-  allOk = pass(
-    'Top-left corner  (transparent outside rounded-rect)',
-    result.topLeftCorner,
-    px => px[3] < 30,
-    'alpha < 30',
-  ) && allOk;
-  allOk = pass(
-    'Background top-centre (brand green)',
-    result.bgTopCenter,
-    px => px[1] > 80 && px[0] < px[1],
-    'green channel dominant',
-  ) && allOk;
+  allOk =
+    pass(
+      'Top-left corner  (transparent outside rounded-rect)',
+      result.topLeftCorner,
+      (px) => px[3] < 30,
+      'alpha < 30'
+    ) && allOk;
+  allOk =
+    pass(
+      'Background top-centre (brand green)',
+      result.bgTopCenter,
+      (px) => px[1] > 80 && px[0] < px[1],
+      'green channel dominant'
+    ) && allOk;
 
   console.log('\nRaw pixel dump (for reference):');
   for (const [k, v] of Object.entries(result)) {

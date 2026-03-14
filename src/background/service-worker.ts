@@ -2,16 +2,18 @@ import type {
   CaptureOptions,
   CaptureStatus,
   CaptureTilePayload,
+  DownloadOptions,
   ExportFile,
   ExportOptions,
   RuntimeResponse
 } from '../shared/messages';
 import { readPersistedValue } from '../shared/persisted-store';
 import {
+  AREA_SELECTION_CANCELLED,
+  createDownloadRequest,
   getErrorMessage,
   isPositiveFiniteNumber,
-  validateTilePayload,
-  AREA_SELECTION_CANCELLED
+  validateTilePayload
 } from '../shared/utils';
 import {
   CAPTURE_PROTOCOLS,
@@ -26,6 +28,7 @@ import {
   DOWNLOAD_COMPLETION_TIMEOUT_MS,
   EXPORT_TIMEOUT_MS,
   DEFAULT_CAPTURE_OPTIONS,
+  DEFAULT_DOWNLOAD_OPTIONS,
   DEFAULT_EXPORT_OPTIONS
 } from '../shared/constants';
 
@@ -207,11 +210,14 @@ function sanitizeCaptureOptions(input: Partial<CaptureOptions>): CaptureOptions 
 
 function sanitizeExportOptions(input: Partial<ExportOptions>): ExportOptions {
   const format = input.format === 'jpg' || input.format === 'pdf' ? input.format : 'png';
+  const jpgQuality = isPositiveFiniteNumber(input.jpgQuality)
+    ? Math.max(0.4, Math.min(1, input.jpgQuality))
+    : DEFAULT_EXPORT_OPTIONS.jpgQuality;
   return {
     ...DEFAULT_EXPORT_OPTIONS,
     ...input,
     format,
-    jpgQuality: DEFAULT_EXPORT_OPTIONS.jpgQuality
+    jpgQuality
   };
 }
 
@@ -229,6 +235,22 @@ async function loadExportOptions(): Promise<ExportOptions> {
     return DEFAULT_EXPORT_OPTIONS;
   }
   return sanitizeExportOptions(value as Partial<ExportOptions>);
+}
+
+function sanitizeDownloadOptions(input: Partial<DownloadOptions>): DownloadOptions {
+  return {
+    ...DEFAULT_DOWNLOAD_OPTIONS,
+    ...input,
+    askWhereToSave: Boolean(input.askWhereToSave)
+  };
+}
+
+async function loadDownloadOptions(): Promise<DownloadOptions> {
+  const value = await readPersistedValue('downloadOptions');
+  if (!value || typeof value !== 'object') {
+    return DEFAULT_DOWNLOAD_OPTIONS;
+  }
+  return sanitizeDownloadOptions(value as Partial<DownloadOptions>);
 }
 
 function addFilenameSuffix(
@@ -345,10 +367,9 @@ async function checkForDevBuildUpdate(): Promise<void> {
   }
 
   try {
-    const response = await fetch(
-      `${chrome.runtime.getURL('build-meta.json')}?t=${Date.now()}`,
-      { cache: 'no-store' }
-    );
+    const response = await fetch(`${chrome.runtime.getURL('build-meta.json')}?t=${Date.now()}`, {
+      cache: 'no-store'
+    });
     if (!response.ok) {
       return;
     }
@@ -581,6 +602,7 @@ async function startAreaCapture(): Promise<RuntimeResponse<StartCaptureResponse>
     });
 
     const exportOptions = await loadExportOptions();
+    const downloadOptions = await loadDownloadOptions();
 
     const dataUrl = await captureVisibleTabWithRetry(tab.windowId);
     const exported = (await chrome.runtime.sendMessage({
@@ -608,11 +630,13 @@ async function startAreaCapture(): Promise<RuntimeResponse<StartCaptureResponse>
 
     for (let i = 0; i < captures.length; i += 1) {
       const item = captures[i];
-      const downloadId = await chrome.downloads.download({
-        url: item.dataUrl,
-        filename: addFilenameSuffix(job.filename, i, item.extension, captures.length),
-        conflictAction: 'uniquify'
-      });
+      const downloadId = await chrome.downloads.download(
+        createDownloadRequest(
+          item.dataUrl,
+          addFilenameSuffix(job.filename, i, item.extension, captures.length),
+          downloadOptions.askWhereToSave
+        )
+      );
       if (typeof downloadId !== 'number') {
         throw new Error(`Download ${i + 1}/${captures.length} did not start.`);
       }
@@ -843,6 +867,7 @@ async function handleCaptureFinished(
     });
 
     const exportOptions = await loadExportOptions();
+    const downloadOptions = await loadDownloadOptions();
 
     const exported = (await chrome.runtime.sendMessage({
       type: 'offscreen-export',
@@ -870,11 +895,13 @@ async function handleCaptureFinished(
 
     for (let i = 0; i < captures.length; i += 1) {
       const item = captures[i];
-      const downloadId = await chrome.downloads.download({
-        url: item.dataUrl,
-        filename: addFilenameSuffix(job.filename, i, item.extension, captures.length),
-        conflictAction: 'uniquify'
-      });
+      const downloadId = await chrome.downloads.download(
+        createDownloadRequest(
+          item.dataUrl,
+          addFilenameSuffix(job.filename, i, item.extension, captures.length),
+          downloadOptions.askWhereToSave
+        )
+      );
       if (typeof downloadId !== 'number') {
         throw new Error(`Download ${i + 1}/${captures.length} did not start.`);
       }
@@ -892,7 +919,6 @@ async function handleCaptureFinished(
     if (activeJob?.id === job.id) {
       activeJob = null;
     }
-    scheduleOffscreenClose();
     updateStatus({
       state: 'done',
       phase: undefined,
@@ -907,6 +933,7 @@ async function handleCaptureFinished(
     if (finalizingJobId === job.id) {
       finalizingJobId = null;
     }
+    scheduleOffscreenClose();
   }
 }
 

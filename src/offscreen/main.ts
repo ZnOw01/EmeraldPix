@@ -72,7 +72,12 @@ interface CropExportMessage {
   options?: Partial<ExportOptions>;
 }
 
-type OffscreenMessage = AddTileMessage | ExportMessage | ClearMessage | ResetMessage | CropExportMessage;
+type OffscreenMessage =
+  | AddTileMessage
+  | ExportMessage
+  | ClearMessage
+  | ResetMessage
+  | CropExportMessage;
 type JsPdfModule = typeof import('jspdf');
 
 const JOB_TTL_MS = 5 * 60 * 1000; // 5 minutes
@@ -121,13 +126,13 @@ function getOrCreateJob(jobId: string): OffscreenJob {
 }
 
 function normalizeExportOptions(input?: Partial<ExportOptions>): ExportOptions {
+  const q = Number(input?.jpgQuality);
   return {
     ...DEFAULT_EXPORT_OPTIONS,
     ...(input ?? {}),
-    jpgQuality: Math.max(
-      0.4,
-      Math.min(1, Number(input?.jpgQuality ?? DEFAULT_EXPORT_OPTIONS.jpgQuality))
-    )
+    jpgQuality: isPositiveFiniteNumber(q)
+      ? Math.max(0.4, Math.min(1, q))
+      : DEFAULT_EXPORT_OPTIONS.jpgQuality
   };
 }
 
@@ -332,38 +337,62 @@ async function addTile(message: AddTileMessage): Promise<RuntimeResponse<{ split
       return { ok: false, error: 'Invalid captured tile dimensions.' };
     }
 
-    // Scale both width and height dimensions if window size differs from image
-    const windowHeight = tile.windowHeight ?? image.height;
-    if (!isPositiveFiniteNumber(windowHeight)) {
-      return { ok: false, error: 'Invalid window dimensions in tile payload.' };
-    }
-    const scaleX = image.width / tile.windowWidth;
-    const scaleY = image.height / windowHeight;
+    const scaleX = image.width / tile.screenshotWidth;
+    const scaleY = image.height / tile.screenshotHeight;
     if (!isPositiveFiniteNumber(scaleX) || !isPositiveFiniteNumber(scaleY)) {
       return { ok: false, error: 'Invalid tile scaling factors.' };
     }
-    if (scaleX !== 1 || scaleY !== 1) {
-      tile.x *= scaleX;
-      tile.y *= scaleY;
-      tile.totalWidth *= scaleX;
-      tile.totalHeight *= scaleY;
-      if (
-        !isNonNegativeFiniteNumber(tile.x) ||
-        !isNonNegativeFiniteNumber(tile.y) ||
-        !isPositiveFiniteNumber(tile.totalWidth) ||
-        !isPositiveFiniteNumber(tile.totalHeight)
-      ) {
-        return { ok: false, error: 'Invalid scaled tile dimensions.' };
-      }
+
+    const sourceX = Math.max(0, Math.round((tile.cropX ?? 0) * scaleX));
+    const sourceY = Math.max(0, Math.round((tile.cropY ?? 0) * scaleY));
+    const sourceWidth = Math.min(
+      image.width - sourceX,
+      Math.max(1, Math.round((tile.cropWidth ?? tile.viewportWidth) * scaleX))
+    );
+    const sourceHeight = Math.min(
+      image.height - sourceY,
+      Math.max(1, Math.round((tile.cropHeight ?? tile.viewportHeight) * scaleY))
+    );
+
+    const destinationX = tile.x * scaleX;
+    const destinationY = tile.y * scaleY;
+    const scaledTotalWidth = tile.totalWidth * scaleX;
+    const scaledTotalHeight = tile.totalHeight * scaleY;
+
+    if (
+      !isNonNegativeFiniteNumber(destinationX) ||
+      !isNonNegativeFiniteNumber(destinationY) ||
+      !isPositiveFiniteNumber(scaledTotalWidth) ||
+      !isPositiveFiniteNumber(scaledTotalHeight) ||
+      !isPositiveFiniteNumber(sourceWidth) ||
+      !isPositiveFiniteNumber(sourceHeight)
+    ) {
+      return { ok: false, error: 'Invalid scaled tile dimensions.' };
     }
 
     if (!job.slices.length) {
-      job.slices = initSlices(tile.totalWidth, tile.totalHeight);
+      job.slices = initSlices(scaledTotalWidth, scaledTotalHeight);
     }
 
-    const targets = matchingSlices(tile.x, tile.y, image.width, image.height, job.slices);
+    const targets = matchingSlices(
+      destinationX,
+      destinationY,
+      sourceWidth,
+      sourceHeight,
+      job.slices
+    );
     targets.forEach((slice) => {
-      slice.ctx.drawImage(image, tile.x - slice.left, tile.y - slice.top);
+      slice.ctx.drawImage(
+        image,
+        sourceX,
+        sourceY,
+        sourceWidth,
+        sourceHeight,
+        destinationX - slice.left,
+        destinationY - slice.top,
+        sourceWidth,
+        sourceHeight
+      );
     });
 
     return { ok: true, data: { splitCount: job.slices.length } };

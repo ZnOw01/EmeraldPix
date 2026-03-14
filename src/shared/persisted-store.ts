@@ -1,9 +1,5 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
-import type {
-  CaptureOptions,
-  DownloadOptions,
-  ExportOptions
-} from './messages';
+import type { CaptureOptions, DownloadOptions, ExportOptions } from './messages';
 import { getErrorMessage } from './utils';
 
 interface PersistedState {
@@ -13,6 +9,11 @@ interface PersistedState {
 }
 
 type PersistedKey = keyof PersistedState;
+export const PERSISTED_KEYS: PersistedKey[] = [
+  'captureOptions',
+  'exportOptions',
+  'downloadOptions'
+];
 
 interface EmeraldPixDbSchema extends DBSchema {
   settings: {
@@ -80,86 +81,94 @@ async function deleteFromIdb(keys: PersistedKey[]): Promise<void> {
   await tx.done;
 }
 
+function arePersistedValuesEqual(left: unknown, right: unknown): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+async function syncIdbValue<K extends PersistedKey>(
+  key: K,
+  value: PersistedState[K] | undefined
+): Promise<void> {
+  if (value === undefined) {
+    await deleteFromIdb([key]);
+    return;
+  }
+
+  await writeToIdb({ [key]: value } as Pick<PersistedState, K>);
+}
+
 export async function readPersistedValue<K extends PersistedKey>(
   key: K
 ): Promise<PersistedState[K] | undefined> {
+  let idbValue: PersistedState[K] | undefined;
+
   try {
-    const value = await readFromIdb(key);
-    if (value !== undefined) {
-      return value;
-    }
+    idbValue = await readFromIdb(key);
   } catch (error) {
     logStorageWarning(`IndexedDB read failed for key "${key}"`, error);
   }
 
-  // IDB returned nothing or failed — fall back to chrome.storage mirror
   try {
     const result = await chrome.storage.local.get(key);
     const value = result[key] as PersistedState[K] | undefined;
+
+    if (!arePersistedValuesEqual(idbValue, value)) {
+      try {
+        await syncIdbValue(key, value);
+      } catch (error) {
+        logStorageWarning(`IndexedDB sync failed for key "${key}"`, error);
+      }
+    }
+
     return value;
   } catch (error) {
     logStorageWarning(`chrome.storage fallback read failed for key "${key}"`, error);
   }
 
-  return undefined;
+  return idbValue;
 }
 
 export async function writePersistedValues(values: Partial<PersistedState>): Promise<void> {
-  let idbWriteOk = false;
-
-  try {
-    await writeToIdb(values);
-    idbWriteOk = true;
-  } catch (error) {
-    logStorageWarning('IndexedDB write failed', error);
-  }
-
   try {
     await chrome.storage.local.set(values as Record<string, unknown>);
   } catch (error) {
-    logStorageWarning('chrome.storage mirror write failed', error);
-    if (!idbWriteOk) {
-      throw error;
-    }
+    logStorageWarning('chrome.storage write failed', error);
+    throw error;
+  }
+
+  try {
+    await writeToIdb(values);
+  } catch (error) {
+    logStorageWarning('IndexedDB mirror write failed', error);
   }
 }
 
 export async function clearPersistedValues(): Promise<void> {
-  let idbClearOk = false;
-
   try {
-    await clearIdb();
-    idbClearOk = true;
+    await chrome.storage.local.remove(PERSISTED_KEYS);
   } catch (error) {
-    logStorageWarning('IndexedDB clear failed', error);
+    logStorageWarning('chrome.storage clear failed', error);
+    throw error;
   }
 
   try {
-    await chrome.storage.local.clear();
+    await clearIdb();
   } catch (error) {
-    logStorageWarning('chrome.storage clear failed', error);
-    if (!idbClearOk) {
-      throw error;
-    }
+    logStorageWarning('IndexedDB clear failed', error);
   }
 }
 
 export async function removePersistedValues(keys: PersistedKey[]): Promise<void> {
-  let idbDeleteOk = false;
-
-  try {
-    await deleteFromIdb(keys);
-    idbDeleteOk = true;
-  } catch (error) {
-    logStorageWarning('IndexedDB delete failed', error);
-  }
-
   try {
     await chrome.storage.local.remove(keys);
   } catch (error) {
     logStorageWarning('chrome.storage delete failed', error);
-    if (!idbDeleteOk) {
-      throw error;
-    }
+    throw error;
+  }
+
+  try {
+    await deleteFromIdb(keys);
+  } catch (error) {
+    logStorageWarning('IndexedDB delete failed', error);
   }
 }

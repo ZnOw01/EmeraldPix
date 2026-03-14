@@ -24,8 +24,6 @@ describe('format-message', () => {
   });
 
   it('replaces repeated placeholders consistently', () => {
-    expect(formatMessage('{name} -> {name}', { name: 'ScreenCap' })).toBe(
-      'ScreenCap -> ScreenCap'
-    );
+    expect(formatMessage('{name} -> {name}', { name: 'ScreenCap' })).toBe('ScreenCap -> ScreenCap');
   });
 });

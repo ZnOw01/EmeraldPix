@@ -63,13 +63,3 @@ describe('capture-math', () => {
     });
   });
 });
-
-describe('filename sanitization', () => {
-  it('generates screenshot format names', () => {
-    // This would test the sanitizeFilename function if exported
-    // For now, just validate the format expectation
-    const filenamePattern = /^Screenshot_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}_\d+$/;
-    const sampleName = 'Screenshot_2026-02-07_16-45_1';
-    expect(sampleName).toMatch(filenamePattern);
-  });
-});

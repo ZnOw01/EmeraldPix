@@ -45,8 +45,14 @@ export interface CaptureTilePayload {
   x: number;
   y: number;
   complete: number;
-  windowWidth: number;
-  windowHeight?: number;
+  viewportWidth: number;
+  viewportHeight: number;
+  screenshotWidth: number;
+  screenshotHeight: number;
+  cropX?: number;
+  cropY?: number;
+  cropWidth?: number;
+  cropHeight?: number;
   totalWidth: number;
   totalHeight: number;
   devicePixelRatio: number;

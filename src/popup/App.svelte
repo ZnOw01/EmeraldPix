@@ -1,29 +1,39 @@
-
 <script lang="ts">
   import { onMount, tick } from 'svelte';
-  import type {
-    CaptureOptions,
-    CaptureStatus,
-    ExportFormat,
-    ExportOptions,
-    RuntimeResponse
-  } from '../shared/messages';
+  import { fade, fly } from 'svelte/transition';
+  import type { CaptureStatus, ExportFormat, RuntimeResponse } from '../shared/messages';
   import {
     readPersistedValue,
     removePersistedValues,
     writePersistedValues
   } from '../shared/persisted-store';
-  import {
-    DEFAULT_CAPTURE_OPTIONS,
-    DEFAULT_EXPORT_OPTIONS
-  } from '../shared/constants';
   import { formatMessage } from '../shared/format-message';
   import { AREA_SELECTION_CANCELLED } from '../shared/utils';
   import {
+    applyTheme,
+    getThemePreference,
     initTheme,
-    toggleTheme as toggleThemeSetting,
-    type Theme
+    resetThemePreference,
+    setThemePreference,
+    type Theme,
+    type ThemePreference
   } from '../shared/theme';
+  import {
+    composePersistedPopupSettings,
+    createDefaultPopupSettingsState,
+    createPopupSettingsState,
+    type PopupSettingsState
+  } from './settings-model';
+  import { POPUP_COPY } from './copy';
+  import AreaIcon from './icons/AreaIcon.svelte';
+  import CameraIcon from './icons/CameraIcon.svelte';
+  import CloseIcon from './icons/CloseIcon.svelte';
+  import LogoIcon from './icons/LogoIcon.svelte';
+  import MoonIcon from './icons/MoonIcon.svelte';
+  import RetryIcon from './icons/RetryIcon.svelte';
+  import SettingsIcon from './icons/SettingsIcon.svelte';
+  import SpinnerIcon from './icons/SpinnerIcon.svelte';
+  import SunIcon from './icons/SunIcon.svelte';
 
   interface StartCaptureData {
     status: CaptureStatus;
@@ -32,40 +42,9 @@
 
   const APP_VERSION = __APP_VERSION__;
   const DEV_BUILD_LABEL = __BUILD_ID__.replace(/[:.]/g, '-');
-  const COPY: Record<string, string> = {
-    'app.title': 'EmeraldPix',
-    'errors.unknownError': 'Something went wrong. Try again.',
-    'formats.jpg': 'JPG',
-    'formats.pdf': 'PDF',
-    'formats.png': 'PNG',
-    'popup.actions.capture': 'Page',
-    'popup.actions.captureArea': 'Area',
-    'popup.actions.capturing': 'Capturing...',
-    'popup.actions.closeSettings': 'Close settings',
-    'popup.actions.openDownloads': 'Open downloads',
-    'popup.actions.openSettings': 'Open settings',
-    'popup.actions.resetSettings': 'Reset to defaults',
-    'popup.actions.retry': 'Try again',
-    'popup.actions.toggleThemeDark': 'Switch to dark mode',
-    'popup.actions.toggleThemeLight': 'Switch to light mode',
-    'popup.alerts.largePage': '{count} {fileWord}.',
-    'popup.alerts.statusUnavailable': 'Status unavailable.',
-    'popup.errors.couldNotStart': 'Could not start capture.',
-    'popup.errors.invalidStartStatus': 'Capture did not return a valid status.',
-    'popup.misc.appVersion': 'v{version}',
-    'popup.modal.confirmReset': 'Reset all settings to their defaults?',
-    'popup.modal.title': 'Settings',
-    'popup.quick.format': 'Format',
-    'popup.quick.smartScroll': 'Smart scroll',
-    'popup.status.analyzingPage': 'Analyzing the page...',
-    'popup.status.captureComplete': 'Saved',
-    'popup.status.captureFailed': 'Try again',
-    'popup.status.capturingPage': 'Capturing the page...',
-    'popup.status.downloadProgress': '{downloaded}/{total} files saved',
-    'popup.status.progressComplete': '{progress}% complete',
-    'popup.status.readyToCapture': 'Ready',
-    'popup.status.savingCapture': 'Saving your capture...'
-  };
+  const COPY = POPUP_COPY;
+  const exportFormats: ExportFormat[] = ['png', 'jpg', 'pdf'];
+  const themeOptions: ThemePreference[] = ['system', 'light', 'dark'];
 
   const IDLE_STATUS: CaptureStatus = {
     state: 'idle',
@@ -79,10 +58,8 @@
   let pollInFlight = false;
 
   let captureStatus: CaptureStatus = { ...IDLE_STATUS };
-  let progressPercent = 0;
   let statusText = COPY['popup.status.readyToCapture'];
   let statusDetail = '';
-  let screenReaderStatus = '';
 
   let splitAlertVisible = false;
   let splitAlertMessage = '';
@@ -91,22 +68,31 @@
   let errorAlertVisible = false;
   let errorAlertMessage = '';
 
-  let showCaptureButton = true;
-  let showRetryButton = false;
   let lastCaptureType: 'full' | 'area' = 'full';
-  let captureRunning = false;
 
-  let smartScroll = DEFAULT_CAPTURE_OPTIONS.enableSmartScroll;
-  let exportFormat: ExportFormat = DEFAULT_EXPORT_OPTIONS.format;
+  const defaults = createDefaultPopupSettingsState();
+  let smartScroll = defaults.smoothStitching;
+  let exportFormat: ExportFormat = defaults.exportFormat;
+  let jpgQuality = defaults.jpgQuality;
+  let askWhereToSave = defaults.askWhereToSave;
 
   let settingsOpen = false;
-  let theme: Theme = 'light';
-  let effectiveTheme: 'light' | 'dark' = 'light';
+  let effectiveTheme: Theme = 'light';
+  let themePreference: ThemePreference = 'system';
 
   let settingsTriggerEl: HTMLButtonElement | null = null;
   let modalEl: HTMLDivElement | null = null;
   let previousFocusedEl: HTMLElement | null = null;
 
+  $: isIdle = captureStatus.state === 'idle';
+  $: isRunning = captureStatus.state === 'running';
+  $: isDone = captureStatus.state === 'done';
+  $: isError = captureStatus.state === 'error';
+  $: captureRunning = isRunning;
+  $: showProgress = isRunning || isDone;
+  $: showCaptureButton = !isError;
+  $: showRetryButton = isError;
+  $: progressPercent = Math.round(Math.max(0, Math.min(1, captureStatus.progress)) * 100);
   $: captureButtonLabel = captureRunning
     ? t('popup.actions.capturing')
     : t('popup.actions.capture');
@@ -114,8 +100,78 @@
     effectiveTheme === 'light'
       ? t('popup.actions.toggleThemeDark')
       : t('popup.actions.toggleThemeLight');
+  $: jpgQualityPercent = Math.round(jpgQuality * 100);
+
+  $: {
+    if (isIdle) {
+      statusText = t('popup.status.readyToCapture');
+      statusDetail = '';
+      splitAlertMessage = '';
+      splitAlertVisible = false;
+      noticeAlertMessage = '';
+      noticeAlertVisible = false;
+      errorAlertMessage = '';
+      errorAlertVisible = false;
+    } else if (isRunning) {
+      noticeAlertMessage = captureStatus.notice ?? '';
+      noticeAlertVisible = Boolean(noticeAlertMessage);
+      errorAlertMessage = '';
+      errorAlertVisible = false;
+
+      if (captureStatus.phase === 'preflight') {
+        statusText = t('popup.status.analyzingPage');
+        statusDetail =
+          captureStatus.phaseDetail ||
+          t('popup.status.progressComplete', {
+            progress: Math.round((captureStatus.phaseProgress ?? 0) * 100)
+          });
+      } else if (captureStatus.phase === 'export') {
+        statusText = t('popup.status.savingCapture');
+        statusDetail = t('popup.status.downloadProgress', {
+          downloaded: captureStatus.downloadedCount,
+          total: captureStatus.totalCount || 1
+        });
+      } else {
+        statusText = t('popup.status.capturingPage');
+        statusDetail = t('popup.status.progressComplete', {
+          progress: Math.round((captureStatus.phaseProgress ?? captureStatus.progress) * 100)
+        });
+      }
+
+      splitAlertMessage =
+        captureStatus.phase === 'capture' && captureStatus.splitCount > 1
+          ? formatLargePageNotice(captureStatus.splitCount)
+          : '';
+      splitAlertVisible = Boolean(splitAlertMessage);
+    } else if (isDone) {
+      statusText = t('popup.status.captureComplete');
+      statusDetail = formatSavedFiles(captureStatus.downloadedCount);
+      splitAlertMessage = '';
+      splitAlertVisible = false;
+      noticeAlertMessage = captureStatus.notice ?? '';
+      noticeAlertVisible = Boolean(noticeAlertMessage);
+      errorAlertMessage = '';
+      errorAlertVisible = false;
+    } else {
+      statusText = t('popup.status.captureFailed');
+      statusDetail = '';
+      splitAlertMessage = '';
+      splitAlertVisible = false;
+      noticeAlertMessage = '';
+      noticeAlertVisible = false;
+      errorAlertMessage = captureStatus.error || t('errors.unknownError');
+      errorAlertVisible = true;
+    }
+  }
+
   $: screenReaderStatus = statusDetail ? `${statusText}. ${statusDetail}` : statusText;
-  $: showProgress = captureStatus.state === 'running' || captureStatus.state === 'done';
+  $: if (isRunning) {
+    if (pollTimer === undefined) {
+      startPolling();
+    }
+  } else {
+    stopPolling();
+  }
 
   function t(
     id: string,
@@ -143,17 +199,22 @@
     });
   }
 
-  function setCaptureRunning(running: boolean): void {
-    captureRunning = running;
-  }
-
-  function updateThemeIcon(): void {
-    effectiveTheme = theme;
-  }
-
   async function toggleTheme(): Promise<void> {
-    theme = await toggleThemeSetting();
-    updateThemeIcon();
+    const nextTheme: Theme = effectiveTheme === 'dark' ? 'light' : 'dark';
+    themePreference = nextTheme;
+    await setThemePreference(nextTheme);
+    effectiveTheme = nextTheme;
+  }
+
+  async function applyThemeSelection(nextPreference: ThemePreference): Promise<void> {
+    themePreference = nextPreference;
+
+    if (nextPreference === 'system') {
+      effectiveTheme = await resetThemePreference();
+    } else {
+      await setThemePreference(nextPreference);
+      effectiveTheme = nextPreference;
+    }
   }
 
   function getModalFocusableElements(): HTMLElement[] {
@@ -163,7 +224,7 @@
 
     return Array.from(
       modalEl.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        'button:not([disabled]):not([tabindex="-1"]), [href]:not([tabindex="-1"]), input:not([disabled]):not([tabindex="-1"]), select:not([disabled]):not([tabindex="-1"]), textarea:not([disabled]):not([tabindex="-1"]), [tabindex]:not([tabindex="-1"])'
       )
     );
   }
@@ -191,7 +252,7 @@
     restoreTarget?.focus();
   }
 
-  function handleModalOverlayClick(event: MouseEvent): void {
+  function handleModalOverlayMouseDown(event: MouseEvent): void {
     if (event.target === event.currentTarget) {
       closeSettings();
     }
@@ -236,191 +297,70 @@
     }
   }
 
-  function composeCaptureOptionsFromUI(): CaptureOptions {
+  function currentPopupSettingsState(): PopupSettingsState {
     return {
-      ...DEFAULT_CAPTURE_OPTIONS,
-      enableSmartScroll: smartScroll
-    };
-  }
-
-  function composeExportOptionsFromUI(): ExportOptions {
-    return {
-      ...DEFAULT_EXPORT_OPTIONS,
-      format: exportFormat,
-      jpgQuality: DEFAULT_EXPORT_OPTIONS.jpgQuality
+      askWhereToSave,
+      exportFormat,
+      jpgQuality,
+      smoothStitching: smartScroll
     };
   }
 
   async function saveOptionsFromUI(): Promise<void> {
-    await writePersistedValues({
-      captureOptions: composeCaptureOptionsFromUI(),
-      exportOptions: composeExportOptionsFromUI()
+    const persisted = composePersistedPopupSettings(currentPopupSettingsState());
+    await writePersistedValues(persisted);
+  }
+
+  async function loadStoredPopupSettings(): Promise<PopupSettingsState> {
+    const [captureOptions, exportOptions, downloadOptions] = await Promise.all([
+      readPersistedValue('captureOptions'),
+      readPersistedValue('exportOptions'),
+      readPersistedValue('downloadOptions')
+    ]);
+
+    return createPopupSettingsState({
+      captureOptions,
+      exportOptions,
+      downloadOptions
     });
   }
 
-  async function loadStoredCaptureOptions(): Promise<CaptureOptions> {
-    const value = await readPersistedValue('captureOptions');
-    if (!value || typeof value !== 'object') return DEFAULT_CAPTURE_OPTIONS;
-    return { ...DEFAULT_CAPTURE_OPTIONS, ...(value as Partial<CaptureOptions>) };
-  }
-
-  async function loadStoredExportOptions(): Promise<ExportOptions> {
-    const value = await readPersistedValue('exportOptions');
-    if (!value || typeof value !== 'object') return DEFAULT_EXPORT_OPTIONS;
-    const partial = value as Partial<ExportOptions>;
-    return {
-      ...DEFAULT_EXPORT_OPTIONS,
-      ...partial,
-      jpgQuality: DEFAULT_EXPORT_OPTIONS.jpgQuality
-    };
-  }
-
-  function applyCaptureOptionsToUI(options: CaptureOptions): void {
-    smartScroll = options.enableSmartScroll;
-  }
-
-  function applyExportOptionsToUI(options: ExportOptions): void {
-    exportFormat = options.format;
+  function applyPopupSettingsToUI(settings: PopupSettingsState): void {
+    smartScroll = settings.smoothStitching;
+    exportFormat = settings.exportFormat;
+    jpgQuality = settings.jpgQuality;
+    askWhereToSave = settings.askWhereToSave;
   }
 
   function render(status: CaptureStatus): void {
     captureStatus = status;
-    progressPercent = Math.round(Math.max(0, Math.min(1, status.progress)) * 100);
-
-    if (status.state === 'idle') {
-      statusText = t('popup.status.readyToCapture');
-      statusDetail = '';
-      splitAlertVisible = false;
-      noticeAlertVisible = false;
-      errorAlertVisible = false;
-      showRetryButton = false;
-      showCaptureButton = true;
-      setCaptureRunning(false);
-      stopPolling();
-      return;
-    }
-
-    if (status.state === 'running') {
-      noticeAlertMessage = status.notice ?? '';
-      noticeAlertVisible = Boolean(noticeAlertMessage);
-
-      if (status.phase === 'preflight') {
-        statusText = t('popup.status.analyzingPage');
-        statusDetail =
-          status.phaseDetail ||
-          t('popup.status.progressComplete', {
-            progress: Math.round((status.phaseProgress ?? 0) * 100)
-          });
-      } else if (status.phase === 'export') {
-        statusText = t('popup.status.savingCapture');
-        statusDetail = t('popup.status.downloadProgress', {
-          downloaded: status.downloadedCount,
-          total: status.totalCount || 1
-        });
-      } else {
-        statusText = t('popup.status.capturingPage');
-        statusDetail = t('popup.status.progressComplete', {
-          progress: Math.round((status.phaseProgress ?? status.progress) * 100)
-        });
-        if (status.splitCount > 1) {
-          splitAlertMessage = formatLargePageNotice(status.splitCount);
-          splitAlertVisible = true;
-        } else {
-          splitAlertVisible = false;
-        }
-      }
-
-      errorAlertVisible = false;
-      showRetryButton = false;
-      showCaptureButton = true;
-      setCaptureRunning(true);
-      if (pollTimer === undefined) {
-        startPolling();
-      }
-      return;
-    }
-
-    if (status.state === 'done') {
-      statusText = t('popup.status.captureComplete');
-      statusDetail = formatSavedFiles(status.downloadedCount);
-      splitAlertVisible = false;
-      noticeAlertMessage = status.notice ?? '';
-      noticeAlertVisible = Boolean(noticeAlertMessage);
-      errorAlertVisible = false;
-      showRetryButton = false;
-      showCaptureButton = true;
-      setCaptureRunning(false);
-      stopPolling();
-      return;
-    }
-
-    statusText = t('popup.status.captureFailed');
-    statusDetail = '';
-    errorAlertMessage = status.error || t('errors.unknownError');
-    splitAlertVisible = false;
-    noticeAlertVisible = false;
-    errorAlertVisible = true;
-    showCaptureButton = false;
-    showRetryButton = true;
-    setCaptureRunning(false);
-    stopPolling();
   }
 
   async function sendMessage<T>(message: unknown): Promise<RuntimeResponse<T>> {
     return chrome.runtime.sendMessage(message) as Promise<RuntimeResponse<T>>;
   }
 
-  async function startCapture(): Promise<void> {
-    lastCaptureType = 'full';
-    setCaptureRunning(true);
-    showRetryButton = false;
-    errorAlertVisible = false;
-    showCaptureButton = true;
+  async function executeCapture(
+    captureType: 'full' | 'area',
+    messageType: 'start-capture' | 'start-area-capture'
+  ): Promise<void> {
+    lastCaptureType = captureType;
+    render({
+      ...IDLE_STATUS,
+      state: 'running',
+      phase: 'preflight',
+      phaseProgress: 0
+    });
     await saveOptionsFromUI();
 
     try {
-      const response = await sendMessage<StartCaptureData>({ type: 'start-capture' });
-      if (!response.ok || !response.data) {
-        render({
-          state: 'error',
-          progress: 0,
-          splitCount: 1,
-          downloadedCount: 0,
-          totalCount: 0,
-          error: response.ok
-            ? t('popup.errors.invalidStartStatus')
-            : response.error
-        });
-        return;
-      }
-      render(response.data.status);
-    } catch {
-      render({
-        state: 'error',
-        progress: 0,
-        splitCount: 1,
-        downloadedCount: 0,
-        totalCount: 0,
-        error: t('popup.errors.couldNotStart')
-      });
-    }
-  }
-
-  async function startAreaCapture(): Promise<void> {
-    lastCaptureType = 'area';
-    setCaptureRunning(true);
-    showRetryButton = false;
-    errorAlertVisible = false;
-    showCaptureButton = true;
-    await saveOptionsFromUI();
-
-    try {
-      const response = await sendMessage<StartCaptureData>({ type: 'start-area-capture' });
+      const response = await sendMessage<StartCaptureData>({ type: messageType });
       if (!response.ok || !response.data) {
         if (!response.ok && response.error === AREA_SELECTION_CANCELLED) {
           render({ ...IDLE_STATUS });
           return;
         }
+
         render({
           state: 'error',
           progress: 0,
@@ -431,6 +371,7 @@
         });
         return;
       }
+
       render(response.data.status);
     } catch {
       render({
@@ -442,6 +383,14 @@
         error: t('popup.errors.couldNotStart')
       });
     }
+  }
+
+  async function startCapture(): Promise<void> {
+    return executeCapture('full', 'start-capture');
+  }
+
+  async function startAreaCapture(): Promise<void> {
+    return executeCapture('area', 'start-area-capture');
   }
 
   async function loadCurrentCaptureStatus(): Promise<void> {
@@ -454,6 +403,7 @@
     } catch {
       stopPolling();
     }
+
     render({ ...IDLE_STATUS });
   }
 
@@ -461,6 +411,7 @@
     if (pollInFlight) {
       return;
     }
+
     pollInFlight = true;
 
     try {
@@ -500,16 +451,79 @@
     }
   }
 
-  async function handleAnySettingChange(): Promise<void> {
-    await saveOptionsFromUI();
-  }
-
   async function handleFormatSelect(format: ExportFormat): Promise<void> {
     exportFormat = format;
     await saveOptionsFromUI();
   }
 
-  async function toggleSmartScrollQuick(): Promise<void> {
+  function getRadioSelection<T extends string>(
+    options: readonly T[],
+    current: T,
+    key: string
+  ): T | null {
+    const index = options.indexOf(current);
+    if (index === -1) {
+      return null;
+    }
+
+    if (key === 'ArrowRight' || key === 'ArrowDown') {
+      return options[(index + 1) % options.length];
+    }
+
+    if (key === 'ArrowLeft' || key === 'ArrowUp') {
+      return options[(index - 1 + options.length) % options.length];
+    }
+
+    if (key === 'Home') {
+      return options[0];
+    }
+
+    if (key === 'End') {
+      return options[options.length - 1];
+    }
+
+    return null;
+  }
+
+  function focusRadioButton(currentTarget: EventTarget | null, value: string): void {
+    const group = (currentTarget as HTMLElement | null)?.parentElement;
+    group?.querySelector<HTMLElement>(`[data-radio-value="${value}"]`)?.focus();
+  }
+
+  async function handleFormatRadioKeyDown(
+    event: KeyboardEvent,
+    current: ExportFormat
+  ): Promise<void> {
+    const next = getRadioSelection(exportFormats, current, event.key);
+    if (!next) {
+      return;
+    }
+
+    event.preventDefault();
+    await handleFormatSelect(next);
+    focusRadioButton(event.currentTarget, next);
+  }
+
+  async function handleThemeRadioKeyDown(
+    event: KeyboardEvent,
+    current: ThemePreference
+  ): Promise<void> {
+    const next = getRadioSelection(themeOptions, current, event.key);
+    if (!next) {
+      return;
+    }
+
+    event.preventDefault();
+    await applyThemeSelection(next);
+    focusRadioButton(event.currentTarget, next);
+  }
+
+  async function toggleAskWhereToSave(): Promise<void> {
+    askWhereToSave = !askWhereToSave;
+    await saveOptionsFromUI();
+  }
+
+  async function toggleSmoothStitching(): Promise<void> {
     smartScroll = !smartScroll;
     await saveOptionsFromUI();
   }
@@ -519,13 +533,12 @@
       return;
     }
 
-    await removePersistedValues([
-      'captureOptions',
-      'exportOptions'
-    ]);
-    applyCaptureOptionsToUI(DEFAULT_CAPTURE_OPTIONS);
-    applyExportOptionsToUI(DEFAULT_EXPORT_OPTIONS);
+    await removePersistedValues(['captureOptions', 'exportOptions', 'downloadOptions']);
+    applyPopupSettingsToUI(createDefaultPopupSettingsState());
     await saveOptionsFromUI();
+
+    themePreference = 'system';
+    effectiveTheme = await resetThemePreference();
     closeSettings();
   }
 
@@ -537,6 +550,7 @@
     render({ ...IDLE_STATUS });
 
     let disposed = false;
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
 
     const runtimeListener = (message: {
       type?: string;
@@ -548,33 +562,39 @@
       return false;
     };
 
-    chrome.runtime.onMessage.addListener(runtimeListener);
-
-    void (async () => {
-      theme = await initTheme();
-      updateThemeIcon();
-
-      const [captureOptions, exportOptions] = await Promise.all([
-        loadStoredCaptureOptions(),
-        loadStoredExportOptions()
-      ]);
-
-      if (disposed) {
+    const handleSystemThemeChange = (event: MediaQueryListEvent): void => {
+      if (themePreference !== 'system') {
         return;
       }
 
-      applyCaptureOptionsToUI(captureOptions);
-      applyExportOptionsToUI(exportOptions);
-      await loadCurrentCaptureStatus();
+      effectiveTheme = event.matches ? 'dark' : 'light';
+      void applyTheme(effectiveTheme);
+    };
 
-      theme = await initTheme();
-      updateThemeIcon();
+    chrome.runtime.onMessage.addListener(runtimeListener);
+    mediaQuery.addEventListener('change', handleSystemThemeChange);
+
+    void (async () => {
+      const pref = await getThemePreference();
+      if (disposed) return;
+      themePreference = pref;
+
+      const resolvedTheme = await initTheme();
+      if (disposed) return;
+      effectiveTheme = resolvedTheme;
+
+      const settings = await loadStoredPopupSettings();
+      if (disposed) return;
+
+      applyPopupSettingsToUI(settings);
+      await loadCurrentCaptureStatus();
     })();
 
     return () => {
       disposed = true;
       stopPolling();
       chrome.runtime.onMessage.removeListener(runtimeListener);
+      mediaQuery.removeEventListener('change', handleSystemThemeChange);
     };
   });
 </script>
@@ -585,13 +605,7 @@
   <header class="header">
     <div class="logo">
       <div class="logo-icon" aria-hidden="true">
-        <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <rect x="1.5" y="5.5" width="17" height="12" rx="2" stroke="white" stroke-width="1.4" fill="rgba(255,255,255,0.15)"/>
-          <circle cx="10" cy="12" r="3" stroke="white" stroke-width="1.4"/>
-          <circle cx="10" cy="12" r="1.2" fill="white"/>
-          <path d="M7.5 5.5V5a2 2 0 0 1 2-2h1a2 2 0 0 1 2 2v.5" stroke="white" stroke-width="1.4" stroke-linecap="round"/>
-          <circle cx="16" cy="8.5" r="0.8" fill="white" fill-opacity="0.7"/>
-        </svg>
+        <LogoIcon />
       </div>
       <span class="logo-text">{t('app.title')}</span>
     </div>
@@ -604,16 +618,9 @@
         on:click={toggleTheme}
       >
         {#if effectiveTheme === 'light'}
-          <!-- Sun icon -->
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
-            <circle cx="12" cy="12" r="4"/>
-            <path d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32 1.41 1.41M2 12h2m16 0h2M4.93 19.07l1.41-1.41m11.32-11.32 1.41-1.41"/>
-          </svg>
+          <SunIcon />
         {:else}
-          <!-- Moon icon -->
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>
-          </svg>
+          <MoonIcon />
         {/if}
       </button>
       <button
@@ -624,11 +631,7 @@
         aria-label={t('popup.actions.openSettings')}
         on:click={openSettings}
       >
-        <!-- Settings gear -->
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
-          <circle cx="12" cy="12" r="3"/>
-        </svg>
+        <SettingsIcon />
       </button>
     </div>
   </header>
@@ -648,7 +651,7 @@
         aria-valuenow={progressPercent}
         aria-valuetext={t('popup.status.progressComplete', { progress: progressPercent })}
       >
-        <div class="progress-bar" style={`width: ${progressPercent}%`}></div>
+        <div class="progress-bar" style:width={`${progressPercent}%`}></div>
       </div>
     {/if}
     {#if statusDetail}
@@ -665,44 +668,45 @@
     {/if}
   </section>
 
-  <div class="control-strip">
-    <div class="format-switch" role="group" aria-label={t('popup.quick.format')}>
-      <button
-        class:active={exportFormat === 'png'}
-        class="format-chip"
-        type="button"
-        aria-pressed={exportFormat === 'png'}
-        on:click={() => handleFormatSelect('png')}
-      >
-        {t('formats.png')}
-      </button>
-      <button
-        class:active={exportFormat === 'jpg'}
-        class="format-chip"
-        type="button"
-        aria-pressed={exportFormat === 'jpg'}
-        on:click={() => handleFormatSelect('jpg')}
-      >
-        {t('formats.jpg')}
-      </button>
-      <button
-        class:active={exportFormat === 'pdf'}
-        class="format-chip"
-        type="button"
-        aria-pressed={exportFormat === 'pdf'}
-        on:click={() => handleFormatSelect('pdf')}
-      >
-        {t('formats.pdf')}
-      </button>
-    </div>
+  <div class="control-strip" role="radiogroup" aria-label={t('popup.quick.format')}>
     <button
-      class:active={smartScroll}
-      class="quick-toggle"
+      data-radio-value="png"
+      class:active={exportFormat === 'png'}
+      class="format-chip"
       type="button"
-      aria-pressed={smartScroll}
-      on:click={toggleSmartScrollQuick}
+      role="radio"
+      aria-checked={exportFormat === 'png'}
+      tabindex={exportFormat === 'png' ? 0 : -1}
+      on:click={() => handleFormatSelect('png')}
+      on:keydown={(event) => void handleFormatRadioKeyDown(event, 'png')}
     >
-      {t('popup.quick.smartScroll')}
+      {t('formats.png')}
+    </button>
+    <button
+      data-radio-value="jpg"
+      class:active={exportFormat === 'jpg'}
+      class="format-chip"
+      type="button"
+      role="radio"
+      aria-checked={exportFormat === 'jpg'}
+      tabindex={exportFormat === 'jpg' ? 0 : -1}
+      on:click={() => handleFormatSelect('jpg')}
+      on:keydown={(event) => void handleFormatRadioKeyDown(event, 'jpg')}
+    >
+      {t('formats.jpg')}
+    </button>
+    <button
+      data-radio-value="pdf"
+      class:active={exportFormat === 'pdf'}
+      class="format-chip"
+      type="button"
+      role="radio"
+      aria-checked={exportFormat === 'pdf'}
+      tabindex={exportFormat === 'pdf' ? 0 : -1}
+      on:click={() => handleFormatSelect('pdf')}
+      on:keydown={(event) => void handleFormatRadioKeyDown(event, 'pdf')}
+    >
+      {t('formats.pdf')}
     </button>
   </div>
 
@@ -710,22 +714,14 @@
     <div class="action-row">
       <button class="capture-btn" type="button" disabled={captureRunning} on:click={startCapture}>
         {#if captureRunning}
-          <svg class="spinner-svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true">
-            <circle cx="12" cy="12" r="10" stroke-opacity="0.25"/>
-            <path d="M22 12a10 10 0 0 0-10-10"/>
-          </svg>
+          <SpinnerIcon />
         {:else}
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/>
-            <circle cx="12" cy="13" r="3"/>
-          </svg>
+          <CameraIcon />
         {/if}
         {captureButtonLabel}
       </button>
       <button class="capture-btn secondary" type="button" disabled={captureRunning} on:click={startAreaCapture}>
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M4 9V5h4M20 9V5h-4M4 15v4h4M20 15v4h-4"/>
-        </svg>
+        <AreaIcon />
         {t('popup.actions.captureArea')}
       </button>
     </div>
@@ -733,45 +729,155 @@
 
   {#if showRetryButton}
     <button class="capture-btn" type="button" on:click={lastCaptureType === 'area' ? startAreaCapture : startCapture}>
-      <!-- Retry / refresh icon -->
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/>
-        <path d="M21 3v5h-5"/>
-        <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/>
-        <path d="M3 21v-5h5"/>
-      </svg>
+      <RetryIcon />
       {t('popup.actions.retry')}
     </button>
   {/if}
-
 </main>
 
-<div class:open={settingsOpen} class="modal-overlay" aria-hidden={!settingsOpen} on:click={handleModalOverlayClick}>
-  <div bind:this={modalEl} class="modal" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="settings-modal-title" on:keydown={handleModalKeyDown}>
+{#if settingsOpen}
+<div
+  class="modal-overlay"
+  role="presentation"
+  transition:fade={{ duration: 160 }}
+  on:mousedown={handleModalOverlayMouseDown}
+>
+  <div bind:this={modalEl} class="modal" transition:fly={{ y: 10, duration: 180 }} tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="settings-modal-title" on:keydown={handleModalKeyDown}>
     <div class="modal-header">
       <h2 class="modal-title" id="settings-modal-title">{t('popup.modal.title')}</h2>
       <button class="modal-close" type="button" title={t('popup.actions.closeSettings')} aria-label={t('popup.actions.closeSettings')} on:click={closeSettings}>
-        <!-- Close X -->
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true">
-          <path d="M18 6 6 18M6 6l12 12"/>
-        </svg>
+        <CloseIcon />
       </button>
     </div>
 
     <div class="modal-body">
-      <div class="modal-utility-row">
-        <div class="settings-actions-grid">
-          <button class="btn-sm settings-action-btn" type="button" on:click={handleResetSettings}>{t('popup.actions.resetSettings')}</button>
-          <button class="btn-sm settings-action-btn" type="button" on:click={handleOpenDownloads}>{t('popup.actions.openDownloads')}</button>
-        </div>
-        <div class="about-row">
-          <span class="app-version">{t('popup.misc.appVersion', { version: APP_VERSION })}</span>
-          {#if __DEV_MODE__}
-            <span class="build-badge" title={__BUILD_ID__}>dev {DEV_BUILD_LABEL}</span>
+      <div class="settings-stack">
+        <section class="settings-section">
+          <div class="section-copy">
+            <p class="section-eyebrow">{t('popup.settings.appearance')}</p>
+            <p class="settings-help">{t('popup.modal.themeHelp')}</p>
+          </div>
+
+          <div class="theme-switch" role="radiogroup" aria-label={t('popup.settings.appearance')}>
+            <button
+              data-radio-value="system"
+              class:active={themePreference === 'system'}
+              class="theme-chip"
+              type="button"
+              role="radio"
+              aria-checked={themePreference === 'system'}
+              tabindex={themePreference === 'system' ? 0 : -1}
+              on:click={() => void applyThemeSelection('system')}
+              on:keydown={(event) => void handleThemeRadioKeyDown(event, 'system')}
+            >
+              {t('popup.modal.themeSystem')}
+            </button>
+            <button
+              data-radio-value="light"
+              class:active={themePreference === 'light'}
+              class="theme-chip"
+              type="button"
+              role="radio"
+              aria-checked={themePreference === 'light'}
+              tabindex={themePreference === 'light' ? 0 : -1}
+              on:click={() => void applyThemeSelection('light')}
+              on:keydown={(event) => void handleThemeRadioKeyDown(event, 'light')}
+            >
+              {t('popup.modal.themeLight')}
+            </button>
+            <button
+              data-radio-value="dark"
+              class:active={themePreference === 'dark'}
+              class="theme-chip"
+              type="button"
+              role="radio"
+              aria-checked={themePreference === 'dark'}
+              tabindex={themePreference === 'dark' ? 0 : -1}
+              on:click={() => void applyThemeSelection('dark')}
+              on:keydown={(event) => void handleThemeRadioKeyDown(event, 'dark')}
+            >
+              {t('popup.modal.themeDark')}
+            </button>
+          </div>
+        </section>
+
+        <section class="settings-section">
+          <div class="section-copy">
+            <p class="section-eyebrow">{t('popup.settings.saving')}</p>
+          </div>
+
+          <div class="setting-stack">
+            <div class="settings-inline-row">
+              <span class="settings-label">{t('popup.settings.askWhereToSave')}</span>
+              <button
+                class:active={askWhereToSave}
+                class="quick-toggle compact"
+                type="button"
+                aria-pressed={askWhereToSave}
+                on:click={toggleAskWhereToSave}
+              >
+                {askWhereToSave ? t('popup.modal.enabled') : t('popup.modal.disabled')}
+              </button>
+            </div>
+            <p class="settings-help">{t('popup.settings.askWhereToSaveHelp')}</p>
+          </div>
+
+          {#if exportFormat === 'jpg'}
+            <div class="setting-stack">
+              <div class="settings-inline-row">
+                <span class="settings-label">{t('popup.settings.jpgQuality')}</span>
+                <span class="settings-metric">{jpgQualityPercent}%</span>
+              </div>
+              <input
+                type="range"
+                min="0.4"
+                max="1"
+                step="0.05"
+                bind:value={jpgQuality}
+                on:change={() => void saveOptionsFromUI()}
+              />
+              <p class="settings-help">{t('popup.settings.jpgQualityHelp')}</p>
+            </div>
           {/if}
-          <a href="https://github.com/ZnOw01/EmeraldPix" target="_blank" rel="noopener" class="github-link">GitHub</a>
+        </section>
+
+        <section class="settings-section">
+          <div class="section-copy">
+            <p class="section-eyebrow">{t('popup.settings.capture')}</p>
+          </div>
+
+          <div class="setting-stack">
+            <div class="settings-inline-row">
+              <span class="settings-label">{t('popup.settings.smoothStitching')}</span>
+              <button
+                class:active={smartScroll}
+                class="quick-toggle compact"
+                type="button"
+                aria-pressed={smartScroll}
+                on:click={toggleSmoothStitching}
+              >
+                {smartScroll ? t('popup.modal.enabled') : t('popup.modal.disabled')}
+              </button>
+            </div>
+            <p class="settings-help">{t('popup.settings.smoothStitchingHelp')}</p>
+          </div>
+        </section>
+
+        <div class="modal-utility-row">
+          <div class="settings-actions-grid">
+            <button class="btn-sm settings-action-btn" type="button" on:click={handleResetSettings}>{t('popup.actions.resetSettings')}</button>
+            <button class="btn-sm settings-action-btn" type="button" on:click={handleOpenDownloads}>{t('popup.actions.openDownloads')}</button>
+          </div>
+          <div class="about-row">
+            <span class="app-version">{t('popup.misc.appVersion', { version: APP_VERSION })}</span>
+            {#if __DEV_MODE__}
+              <span class="build-badge" title={__BUILD_ID__}>dev {DEV_BUILD_LABEL}</span>
+            {/if}
+            <a href="https://github.com/ZnOw01/EmeraldPix" target="_blank" rel="noopener" class="github-link">GitHub</a>
+          </div>
         </div>
       </div>
     </div>
   </div>
 </div>
+{/if}

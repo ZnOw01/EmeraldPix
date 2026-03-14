@@ -3,7 +3,6 @@ name: Bug report
 about: Create a report to help us improve
 labels:
   - bug
-
 ---
 
 **Describe the bug**
@@ -27,11 +26,19 @@ A clear and concise description of what you expected to happen.
 
 If applicable, add screenshots to help explain your problem.
 
+**Console errors**
+
+Open DevTools (`F12`) → **Console** tab and paste any errors or warnings that appear when the bug occurs.
+
+```
+(paste here)
+```
+
 **System (please complete the following information):**
 
- - OS: [e.g. Mac OS X 10.13.5, Windows 10.0.0, 18.04.1 LTS]
- - Browser and version [e.g. Chrome v68.0.3440]
- - Extension version [e.g. 3.1.0] (get from chrome://extensions or EmeraldPix settings)
+- OS: [e.g. Mac OS X 10.13.5, Windows 10.0.0, 18.04.1 LTS]
+- Browser and version [e.g. Chrome v68.0.3440]
+- Extension version [e.g. 3.1.0] (get from chrome://extensions or EmeraldPix settings)
 
 **Additional context**
 

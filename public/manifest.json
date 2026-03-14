@@ -1,7 +1,7 @@
 {
   "name": "EmeraldPix",
   "description": "Capture pages in Chrome and Brave.",
-  "version": "3.3.1",
+  "version": "3.4.0",
   "manifest_version": 3,
   "minimum_chrome_version": "120",
   "action": {
@@ -27,15 +27,7 @@
       }
     }
   },
-  "permissions": [
-    "activeTab",
-    "alarms",
-    "downloads",
-    "offscreen",
-    "scripting",
-    "storage",
-    "tabs"
-  ],
+  "permissions": ["activeTab", "alarms", "downloads", "offscreen", "scripting", "storage", "tabs"],
   "host_permissions": ["<all_urls>"],
   "icons": {
     "16": "icon-16x16.png",

@@ -1,6 +1,6 @@
 {
   "name": "emeraldpix",
-  "version": "3.3.1",
+  "version": "3.4.0",
   "private": true,
   "license": "GPL-3.0-only",
   "type": "module",
@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint \"src/**/*.ts\" \"*.config.ts\"",
     "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "format": "prettier --check .",
     "format:write": "prettier --write ."
   },
@@ -20,6 +21,7 @@
     "@sveltejs/vite-plugin-svelte": "^6.2.4",
     "@types/chrome": "^0.0.322",
     "@types/node": "^22.13.5",
+    "@vitest/coverage-v8": "^2.0.0",
     "@typescript-eslint/eslint-plugin": "^7.18.0",
     "@typescript-eslint/parser": "^7.18.0",
     "cross-env": "^7.0.3",

@@ -46,8 +46,14 @@ declare const __BUILD_ID__: string;
   interface PageMetrics {
     totalWidth: number;
     totalHeight: number;
-    windowWidth: number;
-    windowHeight: number;
+    viewportWidth: number;
+    viewportHeight: number;
+    screenshotWidth: number;
+    screenshotHeight: number;
+    cropX: number;
+    cropY: number;
+    cropWidth: number;
+    cropHeight: number;
   }
 
   interface RestorableLazyElement {
@@ -72,6 +78,15 @@ declare const __BUILD_ID__: string;
     devicePixelRatio: number;
   }
 
+  interface ScrollRootTarget {
+    kind: 'document' | 'element';
+    element: HTMLElement | null;
+    getScrollLeft(): number;
+    getScrollTop(): number;
+    scrollTo(x: number, y: number): void;
+    readMetrics(): PageMetrics;
+  }
+
   let isCapturing = false;
 
   function normalizeOptions(input?: Partial<CaptureOptions>): CaptureOptions {
@@ -86,7 +101,7 @@ declare const __BUILD_ID__: string;
     };
   }
 
-  function readPageMetrics(): PageMetrics {
+  function readDocumentMetrics(): PageMetrics {
     const body = document.body;
     const doc = document.documentElement;
 
@@ -108,9 +123,128 @@ declare const __BUILD_ID__: string;
     return {
       totalWidth,
       totalHeight,
-      windowWidth: window.innerWidth,
-      windowHeight: window.innerHeight
+      viewportWidth: window.innerWidth,
+      viewportHeight: window.innerHeight,
+      screenshotWidth: window.innerWidth,
+      screenshotHeight: window.innerHeight,
+      cropX: 0,
+      cropY: 0,
+      cropWidth: window.innerWidth,
+      cropHeight: window.innerHeight
     };
+  }
+
+  function computeVisibleRect(rect: DOMRect): {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  } {
+    const x = Math.max(0, rect.left);
+    const y = Math.max(0, rect.top);
+    const right = Math.min(window.innerWidth, rect.right);
+    const bottom = Math.min(window.innerHeight, rect.bottom);
+    return {
+      x,
+      y,
+      width: Math.max(1, right - x),
+      height: Math.max(1, bottom - y)
+    };
+  }
+
+  function createDocumentScrollRoot(): ScrollRootTarget {
+    return {
+      kind: 'document',
+      element: null,
+      getScrollLeft: () => window.scrollX,
+      getScrollTop: () => window.scrollY,
+      scrollTo: (x, y) => window.scrollTo(x, y),
+      readMetrics: () => readDocumentMetrics()
+    };
+  }
+
+  function createElementScrollRoot(element: HTMLElement): ScrollRootTarget {
+    return {
+      kind: 'element',
+      element,
+      getScrollLeft: () => element.scrollLeft,
+      getScrollTop: () => element.scrollTop,
+      scrollTo: (x, y) => element.scrollTo(x, y),
+      readMetrics: () => {
+        const rect = element.getBoundingClientRect();
+        const visible = computeVisibleRect(rect);
+        return {
+          totalWidth: safeMax([element.clientWidth, element.scrollWidth]),
+          totalHeight: safeMax([element.clientHeight, element.scrollHeight]),
+          viewportWidth: visible.width,
+          viewportHeight: visible.height,
+          screenshotWidth: window.innerWidth,
+          screenshotHeight: window.innerHeight,
+          cropX: visible.x,
+          cropY: visible.y,
+          cropWidth: visible.width,
+          cropHeight: visible.height
+        };
+      }
+    };
+  }
+
+  function findDominantScrollableElement(): HTMLElement | null {
+    const body = document.body;
+    if (!body) {
+      return null;
+    }
+
+    const viewportArea = Math.max(1, window.innerWidth * window.innerHeight);
+    let bestElement: HTMLElement | null = null;
+    let bestScore = 0;
+
+    body.querySelectorAll<HTMLElement>('*').forEach((element) => {
+      if (!element.isConnected) {
+        return;
+      }
+
+      const style = window.getComputedStyle(element);
+      if (!/(auto|scroll|overlay)/.test(style.overflowY) || style.position === 'fixed') {
+        return;
+      }
+
+      const scrollRange = element.scrollHeight - element.clientHeight;
+      if (scrollRange < 240 || element.clientHeight < 220) {
+        return;
+      }
+
+      const rect = element.getBoundingClientRect();
+      const visible = computeVisibleRect(rect);
+      if (visible.width < window.innerWidth * 0.35 || visible.height < window.innerHeight * 0.35) {
+        return;
+      }
+
+      const visibleArea = visible.width * visible.height;
+      const score =
+        visibleArea / viewportArea +
+        Math.min(4, scrollRange / Math.max(1, element.clientHeight)) +
+        Math.min(1, element.clientWidth / Math.max(1, window.innerWidth));
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestElement = element;
+      }
+    });
+
+    return bestElement;
+  }
+
+  function resolveScrollRoot(): ScrollRootTarget {
+    const documentRoot = createDocumentScrollRoot();
+    const metrics = documentRoot.readMetrics();
+    const documentScrollRange = metrics.totalHeight - metrics.viewportHeight;
+    if (documentScrollRange > 120) {
+      return documentRoot;
+    }
+
+    const candidate = findDominantScrollableElement();
+    return candidate ? createElementScrollRoot(candidate) : documentRoot;
   }
 
   function delay(ms: number): Promise<void> {
@@ -163,12 +297,14 @@ declare const __BUILD_ID__: string;
     }
   }
 
-  function preparePage(): () => void {
+  function preparePage(scrollRoot: ScrollRootTarget): () => void {
     const body = document.body;
     const doc = document.documentElement;
     const original = {
       x: window.scrollX,
       y: window.scrollY,
+      rootX: scrollRoot.getScrollLeft(),
+      rootY: scrollRoot.getScrollTop(),
       bodyOverflowY: body?.style.overflowY ?? '',
       docOverflow: doc.style.overflow
     };
@@ -188,24 +324,31 @@ declare const __BUILD_ID__: string;
     // This avoids expensive getComputedStyle calls on entire DOM tree
     const viewportHeight = window.innerHeight;
     const candidateSelectors = [
-      'header', 'footer', 'nav',
+      'header',
+      'footer',
+      'nav',
       '[style*="position"]',
-      '[class*="fixed"]', '[class*="sticky"]', '[class*="header"]', '[class*="navbar"]',
-      '[class*="toolbar"]', '[class*="sidebar"]', '[class*="menu"]'
+      '[class*="fixed"]',
+      '[class*="sticky"]',
+      '[class*="header"]',
+      '[class*="navbar"]',
+      '[class*="toolbar"]',
+      '[class*="sidebar"]',
+      '[class*="menu"]'
     ];
 
     const candidateElements = new Set<HTMLElement>();
 
     // First pass: collect candidates from semantic elements and class hints
-    candidateSelectors.forEach(selector => {
-      document.querySelectorAll<HTMLElement>(selector).forEach(el => {
+    candidateSelectors.forEach((selector) => {
+      document.querySelectorAll<HTMLElement>(selector).forEach((el) => {
         candidateElements.add(el);
       });
     });
 
     // Second pass: only check direct body children if candidate set is small
     if (candidateElements.size < 50) {
-      document.querySelectorAll<HTMLElement>('body > *').forEach(el => {
+      document.querySelectorAll<HTMLElement>('body > *').forEach((el) => {
         const rect = el.getBoundingClientRect();
         // Only check elements that are in the viewport
         if (rect.bottom >= 0 && rect.top <= viewportHeight) {
@@ -263,11 +406,13 @@ declare const __BUILD_ID__: string;
         }
       });
       animationStyle.remove();
+      scrollRoot.scrollTo(original.rootX, original.rootY);
       window.scrollTo(original.x, original.y);
     };
   }
 
   async function estimateSmartHeight(
+    scrollRoot: ScrollRootTarget,
     jobId: string,
     jobStartedAt: number,
     initialMetrics: PageMetrics,
@@ -303,12 +448,12 @@ declare const __BUILD_ID__: string;
         break;
       }
 
-      const targetY = Math.max(0, estimatedHeight - initialMetrics.windowHeight);
-      window.scrollTo(0, targetY);
+      const targetY = Math.max(0, estimatedHeight - initialMetrics.viewportHeight);
+      scrollRoot.scrollTo(0, targetY);
       await waitForSettledFrame(options);
       passCount += 1;
 
-      const now = readPageMetrics();
+      const now = scrollRoot.readMetrics();
       maxWidth = Math.max(maxWidth, now.totalWidth);
       const boundedHeight = Math.min(now.totalHeight, maxAllowedByGrowth);
 
@@ -354,16 +499,17 @@ declare const __BUILD_ID__: string;
   }
 
   async function captureAllTiles(
+    scrollRoot: ScrollRootTarget,
     jobId: string,
     jobStartedAt: number,
-    metrics: { totalWidth: number; totalHeight: number; windowWidth: number; windowHeight: number },
+    metrics: PageMetrics,
     options: CaptureOptions
   ): Promise<void> {
     const plan = buildCapturePlan(
       metrics.totalWidth,
       metrics.totalHeight,
-      metrics.windowWidth,
-      metrics.windowHeight,
+      metrics.viewportWidth,
+      metrics.viewportHeight,
       SCROLL_PAD
     );
     const totalSteps = plan.length;
@@ -371,15 +517,22 @@ declare const __BUILD_ID__: string;
     for (let index = 0; index < totalSteps; index += 1) {
       ensureWithinTimeout(jobStartedAt, 'tile capture');
       const [x, y] = plan[index];
-      window.scrollTo(x, y);
+      scrollRoot.scrollTo(x, y);
       await waitForSettledFrame(options);
+      const currentMetrics = scrollRoot.readMetrics();
 
       const payload: CaptureTilePayload = {
-        x: window.scrollX,
-        y: window.scrollY,
+        x: scrollRoot.getScrollLeft(),
+        y: scrollRoot.getScrollTop(),
         complete: (index + 1) / totalSteps,
-        windowWidth: metrics.windowWidth,
-        windowHeight: metrics.windowHeight,
+        viewportWidth: currentMetrics.viewportWidth,
+        viewportHeight: currentMetrics.viewportHeight,
+        screenshotWidth: currentMetrics.screenshotWidth,
+        screenshotHeight: currentMetrics.screenshotHeight,
+        cropX: currentMetrics.cropX,
+        cropY: currentMetrics.cropY,
+        cropWidth: currentMetrics.cropWidth,
+        cropHeight: currentMetrics.cropHeight,
         totalWidth: metrics.totalWidth,
         totalHeight: metrics.totalHeight,
         devicePixelRatio: window.devicePixelRatio
@@ -397,13 +550,20 @@ declare const __BUILD_ID__: string;
   }
 
   async function runCapture(jobId: string, options: CaptureOptions): Promise<void> {
-    const restore = preparePage();
+    const scrollRoot = resolveScrollRoot();
+    const restore = preparePage(scrollRoot);
     const jobStartedAt = Date.now();
 
     try {
-      let metrics = readPageMetrics();
+      let metrics = scrollRoot.readMetrics();
       if (options.enableSmartScroll) {
-        const estimated = await estimateSmartHeight(jobId, jobStartedAt, metrics, options);
+        const estimated = await estimateSmartHeight(
+          scrollRoot,
+          jobId,
+          jobStartedAt,
+          metrics,
+          options
+        );
         metrics = {
           ...metrics,
           totalWidth: Math.max(metrics.totalWidth, estimated.maxWidth),
@@ -417,9 +577,12 @@ declare const __BUILD_ID__: string;
       }
 
       ensureWithinTimeout(jobStartedAt, 'initialization');
-      window.scrollTo(0, 0);
+      scrollRoot.scrollTo(0, 0);
+      if (scrollRoot.kind === 'element') {
+        window.scrollTo(0, 0);
+      }
       await waitForSettledFrame(options);
-      await captureAllTiles(jobId, jobStartedAt, metrics, options);
+      await captureAllTiles(scrollRoot, jobId, jobStartedAt, metrics, options);
 
       ensureWithinTimeout(jobStartedAt, 'export preparation');
       const finishResponse = await sendMessage({
@@ -454,7 +617,10 @@ declare const __BUILD_ID__: string;
     }
 
     if (message.type === 'capture-ping') {
-      sendResponse({ ok: true, data: { ready: true, capturing: isCapturing, buildId: __BUILD_ID__ } });
+      sendResponse({
+        ok: true,
+        data: { ready: true, capturing: isCapturing, buildId: __BUILD_ID__ }
+      });
       return false;
     }
 
@@ -608,5 +774,4 @@ declare const __BUILD_ID__: string;
     globalScope[LISTENER_BUILD_ID_KEY] = __BUILD_ID__;
     globalScope[CONTENT_LISTENER_KEY] = true;
   }
-
 })();

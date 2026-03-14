@@ -7,18 +7,16 @@
  */
 import { chromium } from 'playwright';
 import { writeFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import { dirname, resolve } from 'node:path';
+import { resolve } from 'node:path';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const PUBLIC = resolve(__dirname, '..', 'public');
+const PUBLIC = resolve(import.meta.dirname, '..', 'public');
 
 // Each entry: [filename, size]
 const ICONS = [
   ['icon-16x16.png', 16],
   ['icon-19x19.png', 19],
   ['icon-48x48.png', 48],
-  ['icon-128x128.png', 128],
+  ['icon-128x128.png', 128]
 ];
 
 /**
@@ -45,9 +43,10 @@ const SVG_DESIGN = `<svg xmlns="http://www.w3.org/2000/svg" width="128" height="
 
 function htmlShell(size) {
   // Re-emit the SVG with explicit width/height so the viewport matches exactly.
-  const sized = SVG_DESIGN
-    .replace(/width="128"/, `width="${size}"`)
-    .replace(/height="128"/, `height="${size}"`);
+  const sized = SVG_DESIGN.replace(/width="128"/, `width="${size}"`).replace(
+    /height="128"/,
+    `height="${size}"`
+  );
   return `<!DOCTYPE html><html><head><meta charset="utf-8">
 <style>*{margin:0;padding:0}html,body{width:${size}px;height:${size}px;overflow:hidden;background:transparent}</style>
 </head><body>${sized}</body></html>`;
@@ -63,7 +62,7 @@ async function main() {
     await page.setContent(htmlShell(size * 2));
     const buffer = await page.screenshot({
       clip: { x: 0, y: 0, width: size * 2, height: size * 2 },
-      omitBackground: true,
+      omitBackground: true
     });
     // Resize to exact target via a second page pass at deviceScaleFactor 1
     const page2 = await context.newPage();
@@ -75,7 +74,7 @@ img{width:${size}px;height:${size}px;display:block}</style>
 </head><body><img src="${dataUrl}"/></body></html>`);
     const final = await page2.screenshot({
       clip: { x: 0, y: 0, width: size, height: size },
-      omitBackground: true,
+      omitBackground: true
     });
     const dest = resolve(PUBLIC, filename);
     writeFileSync(dest, final);
@@ -87,4 +86,7 @@ img{width:${size}px;height:${size}px;display:block}</style>
   await browser.close();
 }
 
-main().catch((err) => { console.error(err); process.exit(1); });
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

@@ -3,11 +3,7 @@
  * This file centralizes default values to avoid duplication.
  */
 
-import type {
-  CaptureOptions,
-  ExportOptions,
-  DownloadOptions
-} from './messages';
+import type { CaptureOptions, DownloadOptions, ExportOptions } from './messages';
 
 /**
  * Default capture options - used by both service worker and popup
@@ -37,27 +33,6 @@ export const DEFAULT_DOWNLOAD_OPTIONS: DownloadOptions = {
 };
 
 /**
- * Profile overrides for different capture quality settings
- */
-export const PROFILE_OVERRIDES: Record<'fast' | 'balanced' | 'stable', Partial<CaptureOptions>> = {
-  fast: {
-    lazyLoadWaitMs: 80,
-    settleFrames: 1,
-    heightGrowthThresholdPx: 72
-  },
-  balanced: {
-    lazyLoadWaitMs: 180,
-    settleFrames: 2,
-    heightGrowthThresholdPx: 48
-  },
-  stable: {
-    lazyLoadWaitMs: 320,
-    settleFrames: 3,
-    heightGrowthThresholdPx: 32
-  }
-};
-
-/**
  * Capture timing constants
  */
 export const JOB_TIMEOUT_MS = 180_000;
@@ -80,6 +55,6 @@ export const PREFLIGHT_PROGRESS_WEIGHT = 0.15;
 /**
  * URL validation patterns
  */
-export const CAPTURE_PROTOCOLS = ['http://', 'https://', 'file://', 'ftp://'];
+export const CAPTURE_PROTOCOLS = ['http://', 'https://', 'file://'];
 export const BLOCKED_URLS = [/^chrome:/i, /^chrome-extension:/i, /^edge:/i, /^about:/i];
 export const BLOCKED_HTTP_URLS = [/^https?:\/\/chrome\.google\.com\//i];
