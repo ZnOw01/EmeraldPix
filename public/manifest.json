@@ -1,6 +1,6 @@
 {
   "name": "EmeraldPix",
-  "description": "Capture pages in Chrome and Brave.",
+  "description": "Capture full pages or selected areas and export locally to PNG, JPG, or PDF.",
   "version": "3.4.0",
   "manifest_version": 3,
   "minimum_chrome_version": "120",

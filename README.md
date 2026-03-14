@@ -19,7 +19,7 @@ npm install
 npm run build
 ```
 
-Open `chrome://extensions` (or `brave://extensions`), enable **Developer mode**, click **Load unpacked** and select the `dist/` folder.
+Open `edge://extensions`, `chrome://extensions`, or `brave://extensions`, enable **Developer mode**, click **Load unpacked** and select the `dist/` folder.
 
 ## Development
 
