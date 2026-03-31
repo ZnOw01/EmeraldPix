@@ -109,9 +109,19 @@ let captureVisibleTabRateLock: Promise<void> | null = null;
 let finalizingJobId: string | null = null;
 let offscreenCloseTimer: ReturnType<typeof setTimeout> | null = null;
 
+// Throttle status updates to prevent memory leaks and excessive messaging
+let lastStatusUpdate = 0;
+const STATUS_UPDATE_INTERVAL = 100; // ms
+
 function updateStatus(next: Partial<CaptureStatus>): void {
   status = { ...status, ...next };
-  void chrome.runtime.sendMessage({ type: 'capture-status', status }).catch(() => undefined);
+
+  // Throttle updates to prevent spam
+  const now = Date.now();
+  if (now - lastStatusUpdate >= STATUS_UPDATE_INTERVAL) {
+    lastStatusUpdate = now;
+    void chrome.runtime.sendMessage({ type: 'capture-status', status }).catch(() => undefined);
+  }
 }
 
 function clamp(value: number, min = 0, max = 1): number {
@@ -139,8 +149,13 @@ function armActiveJobTimeout(jobId: string, timeoutMs: number, timeoutMessage: s
     return;
   }
   clearActiveJobTimeout();
+  // Capture job reference to prevent race condition
+  const jobRef = activeJob;
   activeJob.timeoutId = setTimeout(() => {
-    void failActiveJobById(jobId, timeoutMessage);
+    // Verify job is still the same before failing
+    if (activeJob === jobRef && activeJob?.id === jobId) {
+      void failActiveJobById(jobId, timeoutMessage);
+    }
   }, timeoutMs);
 }
 
