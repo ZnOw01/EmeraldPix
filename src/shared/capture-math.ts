@@ -26,12 +26,15 @@ export function buildCapturePlan(
   totalHeight: number,
   windowWidth: number,
   windowHeight: number,
-  scrollPad: number
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _scrollPad: number
 ): Array<[number, number]> {
   const maxX = Math.max(0, totalWidth - windowWidth);
   const maxY = Math.max(0, totalHeight - windowHeight);
+  // Use viewport dimensions directly without scroll padding to avoid overlapping tiles
+  // Overlapping causes content to be drawn multiple times, creating ghosting/artifacts
   const xStep = Math.max(1, windowWidth);
-  const yStep = Math.max(1, windowHeight - Math.min(scrollPad, Math.max(0, windowHeight - 1)));
+  const yStep = Math.max(1, windowHeight);
   const xStops = generateAxisStops(maxX, xStep);
   const yStops = generateAxisStops(maxY, yStep);
 

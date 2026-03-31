@@ -46,14 +46,15 @@ describe('capture-math', () => {
       expect(uniqueX.size).toBeGreaterThan(1);
     });
 
-    it('respects scroll padding', () => {
+    it('creates non-overlapping tiles for clean stitching', () => {
       const plan = buildCapturePlan(800, 2000, 800, 600, 100);
-      // With scroll padding, tiles should overlap
+      // Without scroll padding, tiles should be exactly windowHeight apart
+      // This prevents overlapping content and ghosting artifacts
       if (plan.length > 1) {
         const [, firstY] = plan[0];
         const [, secondY] = plan[1];
-        // Second tile should not be exactly windowHeight away
-        expect(secondY - firstY).toBeLessThan(600);
+        // Second tile should be exactly windowHeight away (no overlap)
+        expect(secondY - firstY).toBe(600);
       }
     });
 

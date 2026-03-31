@@ -337,23 +337,30 @@ async function addTile(message: AddTileMessage): Promise<RuntimeResponse<{ split
       return { ok: false, error: 'Invalid captured tile dimensions.' };
     }
 
+    // Calculate scale based on the relationship between screenshot and viewport
+    // The screenshot includes browser UI, so we use the crop region to determine content scale
     const scaleX = image.width / tile.screenshotWidth;
     const scaleY = image.height / tile.screenshotHeight;
     if (!isPositiveFiniteNumber(scaleX) || !isPositiveFiniteNumber(scaleY)) {
       return { ok: false, error: 'Invalid tile scaling factors.' };
     }
 
-    const sourceX = Math.max(0, Math.round((tile.cropX ?? 0) * scaleX));
-    const sourceY = Math.max(0, Math.round((tile.cropY ?? 0) * scaleY));
-    const sourceWidth = Math.min(
-      image.width - sourceX,
+    // The crop region on the screenshot that contains the actual content
+    const cropX = Math.max(0, Math.round((tile.cropX ?? 0) * scaleX));
+    const cropY = Math.max(0, Math.round((tile.cropY ?? 0) * scaleY));
+    const cropWidth = Math.min(
+      image.width - cropX,
       Math.max(1, Math.round((tile.cropWidth ?? tile.viewportWidth) * scaleX))
     );
-    const sourceHeight = Math.min(
-      image.height - sourceY,
+    const cropHeight = Math.min(
+      image.height - cropY,
       Math.max(1, Math.round((tile.cropHeight ?? tile.viewportHeight) * scaleY))
     );
 
+    // Calculate destination position on the final canvas
+    // We need to place this tile at the correct position based on scroll offset
+    // The scroll position (tile.x, tile.y) tells us where in the document we are
+    // We convert document coordinates to canvas pixel coordinates
     const destinationX = Math.round(tile.x * scaleX);
     const destinationY = Math.round(tile.y * scaleY);
     const scaledTotalWidth = Math.round(tile.totalWidth * scaleX);
@@ -364,8 +371,8 @@ async function addTile(message: AddTileMessage): Promise<RuntimeResponse<{ split
       !isNonNegativeFiniteNumber(destinationY) ||
       !isPositiveFiniteNumber(scaledTotalWidth) ||
       !isPositiveFiniteNumber(scaledTotalHeight) ||
-      !isPositiveFiniteNumber(sourceWidth) ||
-      !isPositiveFiniteNumber(sourceHeight)
+      !isPositiveFiniteNumber(cropWidth) ||
+      !isPositiveFiniteNumber(cropHeight)
     ) {
       return { ok: false, error: 'Invalid scaled tile dimensions.' };
     }
@@ -374,24 +381,21 @@ async function addTile(message: AddTileMessage): Promise<RuntimeResponse<{ split
       job.slices = initSlices(scaledTotalWidth, scaledTotalHeight);
     }
 
-    const targets = matchingSlices(
-      destinationX,
-      destinationY,
-      sourceWidth,
-      sourceHeight,
-      job.slices
-    );
+    // Draw the cropped region to the appropriate position on the canvas slices
+    // The source region is the crop area from the screenshot
+    // The destination is adjusted by the slice offset
+    const targets = matchingSlices(destinationX, destinationY, cropWidth, cropHeight, job.slices);
     targets.forEach((slice) => {
       slice.ctx.drawImage(
         image,
-        sourceX,
-        sourceY,
-        sourceWidth,
-        sourceHeight,
+        cropX,
+        cropY,
+        cropWidth,
+        cropHeight,
         destinationX - slice.left,
         destinationY - slice.top,
-        sourceWidth,
-        sourceHeight
+        cropWidth,
+        cropHeight
       );
     });
 

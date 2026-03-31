@@ -576,6 +576,22 @@ declare const __BUILD_ID__: string;
       const [x, y] = plan[index];
       scrollRoot.scrollTo(x, y);
       await waitForSettledFrame(options);
+
+      // Verify actual scroll position matches intended position
+      const actualX = scrollRoot.getScrollLeft();
+      const actualY = scrollRoot.getScrollTop();
+      const scrollDeltaX = Math.abs(actualX - x);
+      const scrollDeltaY = Math.abs(actualY - y);
+
+      // If scroll position is significantly off, re-scroll and wait again
+      if (scrollDeltaX > 2 || scrollDeltaY > 2) {
+        console.warn(
+          `[ContentScript] Scroll position mismatch: intended (${x}, ${y}), actual (${actualX}, ${actualY}). Re-scrolling...`
+        );
+        scrollRoot.scrollTo(x, y);
+        await waitForSettledFrame(options);
+      }
+
       const currentMetrics = scrollRoot.readMetrics();
 
       const payload: CaptureTilePayload = {
