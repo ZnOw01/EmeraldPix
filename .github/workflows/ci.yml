@@ -83,7 +83,7 @@ jobs:
         run: npm ci
 
       - name: Cache Playwright Browsers
-        uses: actions/cache@d4323d4df104b026a6aa633fdb11fefa17993b83 # v4.2.2
+        uses: actions/cache@v4.2.2
         id: playwright-cache
         with:
           path: ~/.cache/ms-playwright
