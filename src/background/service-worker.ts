@@ -183,11 +183,36 @@ function isCapturableUrl(url?: string): boolean {
   return true;
 }
 
-// Counter for screenshot numbering within session
+// Counter for screenshot numbering - persisted in storage to survive SW restarts
 let screenshotCounter = 0;
+let screenshotCounterInitialized = false;
 
-function sanitizeFilename(): string {
+// Initialize counter from storage
+async function initScreenshotCounter(): Promise<void> {
+  if (screenshotCounterInitialized) return;
+  try {
+    const result = await chrome.storage.local.get('screenshotCounter');
+    screenshotCounter = result.screenshotCounter || 0;
+    screenshotCounterInitialized = true;
+  } catch {
+    screenshotCounter = 0;
+    screenshotCounterInitialized = true;
+  }
+}
+
+// Persist counter to storage
+async function persistScreenshotCounter(): Promise<void> {
+  try {
+    await chrome.storage.local.set({ screenshotCounter });
+  } catch {
+    // Best effort - counter will reset on next SW restart if storage fails
+  }
+}
+
+async function sanitizeFilename(): Promise<string> {
+  await initScreenshotCounter();
   screenshotCounter++;
+  await persistScreenshotCounter();
   const now = new Date();
   const date = now.toISOString().slice(0, 10);
   const time = now.toTimeString().slice(0, 8).replace(/:/g, '-');
@@ -577,7 +602,7 @@ async function startAreaCapture(): Promise<RuntimeResponse<StartCaptureResponse>
     id: crypto.randomUUID(),
     tabId: tab.id,
     windowId: tab.windowId,
-    filename: sanitizeFilename(),
+    filename: await sanitizeFilename(),
     usesPreflight: false,
     timeoutId: null
   };
@@ -719,7 +744,7 @@ async function startCaptureForTab(tabId?: number): Promise<RuntimeResponse<Start
     id: crypto.randomUUID(),
     tabId: tab.id,
     windowId: tab.windowId,
-    filename: sanitizeFilename(),
+    filename: await sanitizeFilename(),
     usesPreflight: captureOptions.enableSmartScroll,
     timeoutId: null
   };
