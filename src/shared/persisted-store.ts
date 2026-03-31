@@ -88,16 +88,24 @@ function arePersistedValuesEqual(left: unknown, right: unknown): boolean {
   if (left === right) return true;
   if (left == null || right == null) return left === right;
   if (typeof left !== 'object' || typeof right !== 'object') return false;
-  const leftKeys = Object.keys(left);
-  const rightKeys = Object.keys(right);
-  if (leftKeys.length !== rightKeys.length) return false;
-  for (const key of leftKeys) {
-    if (!(key in (right as object))) return false;
-    if ((left as Record<string, unknown>)[key] !== (right as Record<string, unknown>)[key]) {
-      return false;
+
+  // Use JSON serialization for deep comparison of persisted values
+  // This is safe since persisted values are always serializable (no functions, circular refs, etc.)
+  try {
+    return JSON.stringify(left) === JSON.stringify(right);
+  } catch {
+    // Fallback to shallow comparison if JSON serialization fails
+    const leftKeys = Object.keys(left);
+    const rightKeys = Object.keys(right);
+    if (leftKeys.length !== rightKeys.length) return false;
+    for (const key of leftKeys) {
+      if (!(key in (right as object))) return false;
+      if ((left as Record<string, unknown>)[key] !== (right as Record<string, unknown>)[key]) {
+        return false;
+      }
     }
+    return true;
   }
-  return true;
 }
 
 async function syncIdbValue<K extends PersistedKey>(

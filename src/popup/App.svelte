@@ -54,8 +54,9 @@
     totalCount: 0
   };
 
-  let pollTimer: number | undefined;
+  let pollTimer: ReturnType<typeof setInterval> | undefined;
   let pollInFlight = false;
+  let pollingDisposed = false;
 
   let captureStatus: CaptureStatus = { ...IDLE_STATUS };
   let statusText = COPY['popup.status.readyToCapture'];
@@ -438,9 +439,12 @@
   }
 
   function startPolling(): void {
+    if (pollingDisposed) return;
     stopPolling();
     pollTimer = window.setInterval(() => {
-      void pollStatus();
+      if (!pollingDisposed && !pollInFlight) {
+        void pollStatus();
+      }
     }, 500);
   }
 
@@ -449,6 +453,11 @@
       window.clearInterval(pollTimer);
       pollTimer = undefined;
     }
+  }
+
+  function disposePolling(): void {
+    pollingDisposed = true;
+    stopPolling();
   }
 
   async function handleFormatSelect(format: ExportFormat): Promise<void> {
