@@ -48,20 +48,20 @@ describe('capture-math', () => {
 
   describe('buildCapturePlan', () => {
     it('returns single tile for small pages', () => {
-      const plan = buildCapturePlan(800, 600, 1920, 1080, 200);
+      const plan = buildCapturePlan(800, 600, 1920, 1080);
       expect(plan.length).toBe(1);
       expect(plan[0]).toEqual([0, 0]);
     });
 
     it('creates multiple tiles for tall pages', () => {
-      const plan = buildCapturePlan(800, 3000, 800, 600, 200);
+      const plan = buildCapturePlan(800, 3000, 800, 600);
       expect(plan.length).toBeGreaterThan(1);
       // All tiles should have x=0 for single-width page
       plan.forEach(([x]) => expect(x).toBe(0));
     });
 
     it('creates grid for wide and tall pages', () => {
-      const plan = buildCapturePlan(3000, 3000, 800, 600, 200);
+      const plan = buildCapturePlan(3000, 3000, 800, 600);
       expect(plan.length).toBeGreaterThan(1);
       // Should have tiles at different x positions
       const uniqueX = new Set(plan.map(([x]) => x));
@@ -69,7 +69,7 @@ describe('capture-math', () => {
     });
 
     it('creates non-overlapping tiles for clean stitching', () => {
-      const plan = buildCapturePlan(800, 2000, 800, 600, 100);
+      const plan = buildCapturePlan(800, 2000, 800, 600);
       // Without scroll padding, tiles should be exactly windowHeight apart
       // This prevents overlapping content and ghosting artifacts
       if (plan.length > 1) {
@@ -81,7 +81,7 @@ describe('capture-math', () => {
     });
 
     it('handles edge case of exact fit', () => {
-      const plan = buildCapturePlan(800, 600, 800, 600, 0);
+      const plan = buildCapturePlan(800, 600, 800, 600);
       expect(plan.length).toBe(1);
     });
   });

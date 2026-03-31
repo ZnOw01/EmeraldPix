@@ -25,9 +25,7 @@ export function buildCapturePlan(
   totalWidth: number,
   totalHeight: number,
   windowWidth: number,
-  windowHeight: number,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  _scrollPad: number
+  windowHeight: number
 ): Array<[number, number]> {
   const maxX = Math.max(0, totalWidth - windowWidth);
   const maxY = Math.max(0, totalHeight - windowHeight);

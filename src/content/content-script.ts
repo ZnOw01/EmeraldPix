@@ -436,16 +436,21 @@ declare const __BUILD_ID__: string;
     });
 
     const lazyElements: RestorableLazyElement[] = [];
-    document
-      .querySelectorAll<HTMLImageElement | HTMLIFrameElement>('img[loading], iframe[loading]')
-      .forEach((element) => {
-        lazyElements.push({
-          element,
-          hadLoadingAttribute: element.hasAttribute('loading'),
-          loadingValue: element.getAttribute('loading')
-        });
-        element.setAttribute('loading', 'eager');
+    const MAX_LAZY_ELEMENTS = 1000; // Prevent memory issues on pages with thousands of images
+    const lazyNodeList = document.querySelectorAll<HTMLImageElement | HTMLIFrameElement>(
+      'img[loading], iframe[loading]'
+    );
+
+    // Process in chunks to avoid blocking the main thread
+    for (let i = 0; i < Math.min(lazyNodeList.length, MAX_LAZY_ELEMENTS); i++) {
+      const element = lazyNodeList[i];
+      lazyElements.push({
+        element,
+        hadLoadingAttribute: element.hasAttribute('loading'),
+        loadingValue: element.getAttribute('loading')
       });
+      element.setAttribute('loading', 'eager');
+    }
 
     const animationStyle = document.createElement('style');
     animationStyle.id = '__emeraldpix_pause_animations__';
@@ -577,8 +582,7 @@ declare const __BUILD_ID__: string;
       metrics.totalWidth,
       metrics.totalHeight,
       metrics.viewportWidth,
-      metrics.viewportHeight,
-      SCROLL_PAD
+      metrics.viewportHeight
     );
     const totalSteps = plan.length;
 
