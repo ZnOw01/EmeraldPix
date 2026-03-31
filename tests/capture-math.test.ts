@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildCapturePlan, safeMax } from '../src/shared/capture-math';
+import { buildCapturePlan, generateAxisStops, safeMax } from '../src/shared/capture-math';
 
 describe('capture-math', () => {
   describe('safeMax', () => {
@@ -21,6 +21,28 @@ describe('capture-math', () => {
 
     it('filters out NaN values', () => {
       expect(safeMax([1, NaN, 5, NaN, 3])).toBe(5);
+    });
+  });
+
+  describe('generateAxisStops', () => {
+    it('generates stops from 0 to max position', () => {
+      const stops = generateAxisStops(1000, 200);
+      expect(stops).toEqual([0, 200, 400, 600, 800, 1000]);
+    });
+
+    it('includes max position when not exactly divisible', () => {
+      const stops = generateAxisStops(1000, 300);
+      expect(stops).toEqual([0, 300, 600, 900, 1000]);
+    });
+
+    it('handles max position of 0', () => {
+      const stops = generateAxisStops(0, 100);
+      expect(stops).toEqual([0]);
+    });
+
+    it('handles step larger than max position', () => {
+      const stops = generateAxisStops(50, 100);
+      expect(stops).toEqual([0, 50]);
     });
   });
 
