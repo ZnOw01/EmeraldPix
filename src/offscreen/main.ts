@@ -107,9 +107,45 @@ function getJsPdf(): Promise<JsPdfModule> {
   return jsPdfPromise;
 }
 
-setInterval(() => {
-  purgeStaleJobs();
-}, STALE_PURGE_INTERVAL_MS);
+let stalePurgeInterval: ReturnType<typeof setInterval> | null = null;
+
+function startStalePurgeInterval(): void {
+  if (stalePurgeInterval) return;
+  stalePurgeInterval = setInterval(() => {
+    purgeStaleJobs();
+  }, STALE_PURGE_INTERVAL_MS);
+}
+
+function stopStalePurgeInterval(): void {
+  if (stalePurgeInterval) {
+    clearInterval(stalePurgeInterval);
+    stalePurgeInterval = null;
+  }
+}
+
+// Cleanup function for when offscreen document is being destroyed
+function cleanupOffscreen(): void {
+  stopStalePurgeInterval();
+  // Clear all jobs and their canvas resources
+  for (const [jobId, job] of jobs) {
+    for (const slice of job.slices) {
+      // Force canvas cleanup by nulling dimensions
+      if (slice.canvas instanceof OffscreenCanvas) {
+        slice.canvas.width = 0;
+        slice.canvas.height = 0;
+      }
+    }
+  }
+  jobs.clear();
+  jobTimestamps.clear();
+}
+
+// Register cleanup handler
+if (typeof self !== 'undefined') {
+  self.addEventListener('beforeunload', cleanupOffscreen);
+}
+
+startStalePurgeInterval();
 
 function getOrCreateJob(jobId: string): OffscreenJob {
   // Purge stale jobs before creating/accessing
@@ -182,8 +218,14 @@ function initSlices(totalWidth: number, totalHeight: number): ScreenshotSlice[] 
   const result: ScreenshotSlice[] = [];
   for (let row = 0; row < numRows; row += 1) {
     for (let col = 0; col < numCols; col += 1) {
-      const width = col === numCols - 1 ? totalWidth % maxWidth || maxWidth : maxWidth;
-      const height = row === numRows - 1 ? totalHeight % maxHeight || maxHeight : maxHeight;
+      // Fix: Handle remainder correctly when total dimension is exact multiple of max
+      const isLastCol = col === numCols - 1;
+      const isLastRow = row === numRows - 1;
+      const remainderWidth = totalWidth % maxWidth;
+      const remainderHeight = totalHeight % maxHeight;
+
+      const width = isLastCol && remainderWidth !== 0 ? remainderWidth : maxWidth;
+      const height = isLastRow && remainderHeight !== 0 ? remainderHeight : maxHeight;
       const left = col * maxWidth;
       const top = row * maxHeight;
       const { canvas, ctx } = createCanvas(width, height);
@@ -419,6 +461,14 @@ async function exportJob(
     captures = await exportAsPdf(job.slices);
   } else {
     captures = await exportAsRaster(job.slices, options);
+  }
+
+  // Cleanup canvas resources before deleting job
+  for (const slice of job.slices) {
+    if (slice.canvas instanceof OffscreenCanvas) {
+      slice.canvas.width = 0;
+      slice.canvas.height = 0;
+    }
   }
 
   jobs.delete(message.jobId);
