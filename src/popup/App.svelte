@@ -547,9 +547,6 @@
     if (userAgent.includes('Edg/')) {
       return 'edge://downloads/';
     }
-    if (userAgent.includes('Brave/')) {
-      return 'brave://downloads/';
-    }
     return 'chrome://downloads/';
   }
 

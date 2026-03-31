@@ -156,14 +156,6 @@ function createCanvas(width: number, height: number): { canvas: CanvasLike; ctx:
   return { canvas, ctx };
 }
 
-function cloneCanvas(source: CanvasLike): { canvas: CanvasLike; ctx: Canvas2DContext } {
-  const width = source.width;
-  const height = source.height;
-  const { canvas, ctx } = createCanvas(width, height);
-  ctx.drawImage(source as CanvasImageSource, 0, 0);
-  return { canvas, ctx };
-}
-
 function initSlices(totalWidth: number, totalHeight: number): ScreenshotSlice[] {
   if (!isPositiveFiniteNumber(totalWidth) || !isPositiveFiniteNumber(totalHeight)) {
     throw new Error('Invalid total dimensions for export slices.');
@@ -274,15 +266,15 @@ async function exportAsRaster(
   slices: ScreenshotSlice[],
   options: ExportOptions
 ): Promise<ExportFile[]> {
-  const files: ExportFile[] = [];
-  for (const slice of slices) {
-    const { canvas } = cloneCanvas(slice.canvas);
-    const blob = await canvasToBlob(canvas, options.format, options.jpgQuality);
-    files.push({
-      dataUrl: await blobToDataUrl(blob),
-      extension: options.format
-    });
-  }
+  const files = await Promise.all(
+    slices.map(async (slice) => {
+      const blob = await canvasToBlob(slice.canvas, options.format, options.jpgQuality);
+      return {
+        dataUrl: await blobToDataUrl(blob),
+        extension: options.format
+      } as ExportFile;
+    })
+  );
   return files;
 }
 
@@ -291,10 +283,9 @@ async function exportAsPdf(slices: ScreenshotSlice[]): Promise<ExportFile[]> {
   let pdf: InstanceType<typeof jsPDF> | null = null;
 
   for (const slice of slices) {
-    const { canvas } = cloneCanvas(slice.canvas);
-    const imageDataUrl = await blobToDataUrl(await canvasToBlob(canvas, 'png', 1));
-    const orientation = canvas.width >= canvas.height ? 'landscape' : 'portrait';
-    const pageSize: [number, number] = [canvas.width, canvas.height];
+    const imageDataUrl = await blobToDataUrl(await canvasToBlob(slice.canvas, 'png', 1));
+    const orientation = slice.canvas.width >= slice.canvas.height ? 'landscape' : 'portrait';
+    const pageSize: [number, number] = [slice.canvas.width, slice.canvas.height];
 
     if (!pdf) {
       pdf = new jsPDF({
@@ -307,7 +298,16 @@ async function exportAsPdf(slices: ScreenshotSlice[]): Promise<ExportFile[]> {
       pdf.addPage(pageSize, orientation);
     }
 
-    pdf.addImage(imageDataUrl, 'PNG', 0, 0, canvas.width, canvas.height, undefined, 'FAST');
+    pdf.addImage(
+      imageDataUrl,
+      'PNG',
+      0,
+      0,
+      slice.canvas.width,
+      slice.canvas.height,
+      undefined,
+      'FAST'
+    );
   }
 
   if (!pdf) {
@@ -354,10 +354,10 @@ async function addTile(message: AddTileMessage): Promise<RuntimeResponse<{ split
       Math.max(1, Math.round((tile.cropHeight ?? tile.viewportHeight) * scaleY))
     );
 
-    const destinationX = tile.x * scaleX;
-    const destinationY = tile.y * scaleY;
-    const scaledTotalWidth = tile.totalWidth * scaleX;
-    const scaledTotalHeight = tile.totalHeight * scaleY;
+    const destinationX = Math.round(tile.x * scaleX);
+    const destinationY = Math.round(tile.y * scaleY);
+    const scaledTotalWidth = Math.round(tile.totalWidth * scaleX);
+    const scaledTotalHeight = Math.round(tile.totalHeight * scaleY);
 
     if (
       !isNonNegativeFiniteNumber(destinationX) ||
@@ -417,6 +417,9 @@ async function exportJob(
     captures = await exportAsRaster(job.slices, options);
   }
 
+  jobs.delete(message.jobId);
+  jobTimestamps.delete(message.jobId);
+
   return { ok: true, data: { captures } };
 }
 
@@ -462,13 +465,11 @@ async function exportVisibleArea(
 function clearJob(message: ClearMessage): RuntimeResponse {
   jobs.delete(message.jobId);
   jobTimestamps.delete(message.jobId);
-  // Opportunistically purge other stale jobs
   purgeStaleJobs();
   return { ok: true };
 }
 
 function resetJob(message: ResetMessage): RuntimeResponse {
-  // Purge all stale jobs before resetting to clean up any leaked memory
   purgeStaleJobs();
   jobs.set(message.jobId, { slices: [] });
   jobTimestamps.set(message.jobId, Date.now());
@@ -476,7 +477,17 @@ function resetJob(message: ResetMessage): RuntimeResponse {
 }
 
 function isMessage(value: unknown): value is OffscreenMessage {
-  return Boolean(value) && typeof value === 'object' && 'type' in (value as object);
+  if (!value || typeof value !== 'object') return false;
+  const msg = value as Record<string, unknown>;
+  if (!('type' in msg)) return false;
+  const type = msg.type;
+  return (
+    type === 'offscreen-add-tile' ||
+    type === 'offscreen-export' ||
+    type === 'offscreen-clear' ||
+    type === 'offscreen-reset' ||
+    type === 'offscreen-export-visible-area'
+  );
 }
 
 chrome.runtime.onMessage.addListener((message: OffscreenMessage, _sender, sendResponse) => {

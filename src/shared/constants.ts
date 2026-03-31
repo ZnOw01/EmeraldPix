@@ -36,8 +36,9 @@ export const DEFAULT_DOWNLOAD_OPTIONS: DownloadOptions = {
  * Capture timing constants
  */
 export const JOB_TIMEOUT_MS = 180_000;
-export const EXPORT_TIMEOUT_MS = 15 * 60 * 1000;
+export const EXPORT_TIMEOUT_MS = 900_000;
 export const DOWNLOAD_COMPLETION_TIMEOUT_MS = 120_000;
+export const OFFSCREEN_IDLE_CLOSE_MS = 20_000;
 
 /**
  * Capture visible tab rate limiting

@@ -1,9 +1,14 @@
 export type MessageValue = string | number | boolean | Date | null | undefined;
 
+const TEMPLATE_PATTERN = /\{(\w+)\}/g;
+
 export function formatMessage(template: string, values: Record<string, MessageValue> = {}): string {
-  return template.replace(/\{(\w+)\}/g, (_match, key: string) => {
+  return template.replace(TEMPLATE_PATTERN, (_match, key: string) => {
+    if (!(key in values)) {
+      return '';
+    }
     const value = values[key];
-    if (value === null || value === undefined) {
+    if (value == null) {
       return '';
     }
     if (value instanceof Date) {

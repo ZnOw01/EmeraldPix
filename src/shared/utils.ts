@@ -6,7 +6,7 @@ export function getErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message) {
     return error.message;
   }
-  return String(error ?? 'Unknown error');
+  return error != null ? String(error) : 'Unknown error';
 }
 
 export function isFiniteNumber(value: unknown): value is number {

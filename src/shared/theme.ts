@@ -99,8 +99,9 @@ export async function resetThemePreference(): Promise<Theme> {
 }
 
 export async function toggleTheme(): Promise<Theme> {
-  const current = await getCurrentTheme();
-  const next: Theme = current === 'dark' ? 'light' : 'dark';
+  const preference = await getThemePreference();
+  const currentResolved = preference === 'system' ? getSystemTheme() : preference;
+  const next: Theme = currentResolved === 'dark' ? 'light' : 'dark';
   await setThemePreference(next);
   return next;
 }

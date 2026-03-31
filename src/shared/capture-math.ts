@@ -19,6 +19,8 @@ export function generateAxisStops(maxPosition: number, step: number): number[] {
   return positions;
 }
 
+export const MAX_CAPTURE_TILES = 500;
+
 export function buildCapturePlan(
   totalWidth: number,
   totalHeight: number,
@@ -32,6 +34,14 @@ export function buildCapturePlan(
   const yStep = Math.max(1, windowHeight - Math.min(scrollPad, Math.max(0, windowHeight - 1)));
   const xStops = generateAxisStops(maxX, xStep);
   const yStops = generateAxisStops(maxY, yStep);
+
+  const estimatedTiles = xStops.length * yStops.length;
+  if (estimatedTiles > MAX_CAPTURE_TILES) {
+    console.warn(
+      `[CaptureMath] Tile plan exceeds safe limit: ${estimatedTiles} > ${MAX_CAPTURE_TILES}. ` +
+        `Consider reducing capture area or increasing viewport size.`
+    );
+  }
 
   const plan: Array<[number, number]> = [];
   yStops.forEach((y) => {

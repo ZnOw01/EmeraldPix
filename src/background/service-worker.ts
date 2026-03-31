@@ -20,13 +20,14 @@ import {
   BLOCKED_URLS,
   BLOCKED_HTTP_URLS,
   JOB_TIMEOUT_MS,
+  EXPORT_TIMEOUT_MS,
+  OFFSCREEN_IDLE_CLOSE_MS,
   PREFLIGHT_PROGRESS_WEIGHT,
   CAPTURE_VISIBLE_TAB_MIN_INTERVAL_MS,
   CAPTURE_VISIBLE_TAB_MAX_RETRIES,
   CAPTURE_VISIBLE_TAB_BACKOFF_BASE_MS,
   CAPTURE_VISIBLE_TAB_BACKOFF_MAX_MS,
   DOWNLOAD_COMPLETION_TIMEOUT_MS,
-  EXPORT_TIMEOUT_MS,
   DEFAULT_CAPTURE_OPTIONS,
   DEFAULT_DOWNLOAD_OPTIONS,
   DEFAULT_EXPORT_OPTIONS
@@ -104,9 +105,8 @@ let status: CaptureStatus = {
 };
 let offscreenCreationPromise: Promise<void> | null = null;
 let captureVisibleTabNextAllowedAt = 0;
-let captureVisibleTabRateLimitLock: Promise<void> = Promise.resolve();
+let captureVisibleTabRateLock: Promise<void> | null = null;
 let finalizingJobId: string | null = null;
-const OFFSCREEN_IDLE_CLOSE_MS = 20_000;
 let offscreenCloseTimer: ReturnType<typeof setTimeout> | null = null;
 
 function updateStatus(next: Partial<CaptureStatus>): void {
@@ -174,8 +174,8 @@ let screenshotCounter = 0;
 function sanitizeFilename(): string {
   screenshotCounter++;
   const now = new Date();
-  const date = now.toISOString().slice(0, 10); // YYYY-MM-DD
-  const time = now.toTimeString().slice(0, 5).replace(':', '-'); // HH-MM
+  const date = now.toISOString().slice(0, 10);
+  const time = now.toTimeString().slice(0, 8).replace(/:/g, '-');
   return `Screenshot_${date}_${time}_${screenshotCounter}`;
 }
 
@@ -410,9 +410,9 @@ function getCaptureVisibleTabRetryDelayMs(attempt: number): number {
 }
 
 async function waitForCaptureVisibleTabRateLimitSlot(): Promise<void> {
-  const previousLock = captureVisibleTabRateLimitLock;
+  const previousLock = captureVisibleTabRateLock ?? Promise.resolve();
   let releaseLock: () => void = () => undefined;
-  captureVisibleTabRateLimitLock = new Promise<void>((resolve) => {
+  captureVisibleTabRateLock = new Promise<void>((resolve) => {
     releaseLock = resolve;
   });
 
@@ -546,7 +546,7 @@ async function startCapture(): Promise<RuntimeResponse<StartCaptureResponse>> {
 
 async function startAreaCapture(): Promise<RuntimeResponse<StartCaptureResponse>> {
   if (activeJob && status.state === 'running') {
-    return { ok: true, data: { status, alreadyRunning: true } };
+    return { ok: true, data: { status: { ...status }, alreadyRunning: true } };
   }
 
   const tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
@@ -680,7 +680,7 @@ async function startAreaCapture(): Promise<RuntimeResponse<StartCaptureResponse>
 
 async function startCaptureForTab(tabId?: number): Promise<RuntimeResponse<StartCaptureResponse>> {
   if (activeJob && status.state === 'running') {
-    return { ok: true, data: { status, alreadyRunning: true } };
+    return { ok: true, data: { status: { ...status }, alreadyRunning: true } };
   }
 
   let tab: chrome.tabs.Tab | undefined;

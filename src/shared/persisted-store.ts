@@ -13,7 +13,7 @@ export const PERSISTED_KEYS: PersistedKey[] = [
   'captureOptions',
   'exportOptions',
   'downloadOptions'
-];
+] as const;
 
 interface EmeraldPixDbSchema extends DBSchema {
   settings: {
@@ -32,7 +32,7 @@ function logStorageWarning(scope: string, error: unknown): void {
   console.warn(`[PersistedStore] ${scope}: ${getErrorMessage(error)}`);
 }
 
-function getDb(): Promise<IDBPDatabase<EmeraldPixDbSchema>> {
+async function getDb(): Promise<IDBPDatabase<EmeraldPixDbSchema>> {
   if (!dbPromise) {
     dbPromise = openDB<EmeraldPixDbSchema>(DB_NAME, DB_VERSION, {
       upgrade(db) {
@@ -40,6 +40,9 @@ function getDb(): Promise<IDBPDatabase<EmeraldPixDbSchema>> {
           db.createObjectStore(STORE_NAME);
         }
       }
+    }).catch((error) => {
+      dbPromise = null;
+      throw error;
     });
   }
   return dbPromise;
@@ -82,7 +85,19 @@ async function deleteFromIdb(keys: PersistedKey[]): Promise<void> {
 }
 
 function arePersistedValuesEqual(left: unknown, right: unknown): boolean {
-  return JSON.stringify(left) === JSON.stringify(right);
+  if (left === right) return true;
+  if (left == null || right == null) return left === right;
+  if (typeof left !== 'object' || typeof right !== 'object') return false;
+  const leftKeys = Object.keys(left);
+  const rightKeys = Object.keys(right);
+  if (leftKeys.length !== rightKeys.length) return false;
+  for (const key of leftKeys) {
+    if (!(key in (right as object))) return false;
+    if ((left as Record<string, unknown>)[key] !== (right as Record<string, unknown>)[key]) {
+      return false;
+    }
+  }
+  return true;
 }
 
 async function syncIdbValue<K extends PersistedKey>(

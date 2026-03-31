@@ -23,6 +23,8 @@ declare const __BUILD_ID__: string;
   const PRE_FLIGHT_STABLE_PASSES = 2;
   const PRE_FLIGHT_MAX_PASSES = 24;
   const PRE_FLIGHT_MAX_DURATION_MS = 20_000;
+  const MIN_SELECTION_SIZE_PX = 8;
+  const OVERLAY_Z_INDEX = 10_000_000;
   const CONTENT_LISTENER_KEY = '__emeraldpixListenerInstalled__';
   const RUNTIME_LISTENER_KEY = '__emeraldpixRuntimeListener__';
   const LISTENER_BUILD_ID_KEY = '__emeraldpixListenerBuildId__';
@@ -105,20 +107,26 @@ declare const __BUILD_ID__: string;
     const body = document.body;
     const doc = document.documentElement;
 
-    const totalWidth = safeMax([
-      doc.clientWidth,
-      body?.scrollWidth ?? 0,
-      doc.scrollWidth,
-      body?.offsetWidth ?? 0,
-      doc.offsetWidth
-    ]);
-    const totalHeight = safeMax([
-      doc.clientHeight,
-      body?.scrollHeight ?? 0,
-      doc.scrollHeight,
-      body?.offsetHeight ?? 0,
-      doc.offsetHeight
-    ]);
+    const totalWidth = Math.max(
+      1,
+      safeMax([
+        doc.clientWidth,
+        body?.scrollWidth ?? 0,
+        doc.scrollWidth,
+        body?.offsetWidth ?? 0,
+        doc.offsetWidth
+      ])
+    );
+    const totalHeight = Math.max(
+      1,
+      safeMax([
+        doc.clientHeight,
+        body?.scrollHeight ?? 0,
+        doc.scrollHeight,
+        body?.offsetHeight ?? 0,
+        doc.offsetHeight
+      ])
+    );
 
     return {
       totalWidth,
@@ -144,11 +152,13 @@ declare const __BUILD_ID__: string;
     const y = Math.max(0, rect.top);
     const right = Math.min(window.innerWidth, rect.right);
     const bottom = Math.min(window.innerHeight, rect.bottom);
+    const width = right - x;
+    const height = bottom - y;
     return {
       x,
       y,
-      width: Math.max(1, right - x),
-      height: Math.max(1, bottom - y)
+      width: width > 0 ? width : 0,
+      height: height > 0 ? height : 0
     };
   }
 
@@ -199,32 +209,75 @@ declare const __BUILD_ID__: string;
     let bestElement: HTMLElement | null = null;
     let bestScore = 0;
 
-    body.querySelectorAll<HTMLElement>('*').forEach((element) => {
+    const MIN_VISIBLE_FRACTION = 0.35;
+    const MAX_SCROLL_RANGE_SCORE = 4;
+    const MAX_WIDTH_RATIO_SCORE = 1;
+    const MIN_SCROLL_RANGE_PX = 240;
+    const MIN_ELEMENT_HEIGHT_PX = 220;
+
+    const candidateSelectors = [
+      'div[style*="overflow"]',
+      'section[style*="overflow"]',
+      'main[style*="overflow"]',
+      'article[style*="overflow"]',
+      'aside[style*="overflow"]',
+      '[class*="scroll"]',
+      '[class*="overflow"]',
+      '[class*="container"]',
+      '[class*="content"]',
+      '[class*="wrapper"]',
+      '[class*="viewport"]'
+    ];
+
+    const candidates = new Set<HTMLElement>();
+    candidateSelectors.forEach((selector) => {
+      try {
+        body.querySelectorAll<HTMLElement>(selector).forEach((el) => {
+          if (el.isConnected) candidates.add(el);
+        });
+      } catch {}
+    });
+
+    if (candidates.size < 20) {
+      body.querySelectorAll<HTMLElement>('div, section, main, article, aside').forEach((el) => {
+        if (el.isConnected) candidates.add(el);
+      });
+    }
+
+    candidates.forEach((element) => {
       if (!element.isConnected) {
         return;
       }
 
       const style = window.getComputedStyle(element);
-      if (!/(auto|scroll|overlay)/.test(style.overflowY) || style.position === 'fixed') {
+      const overflowY = style.overflowY;
+      const overflow = style.overflow;
+      if (!/(auto|scroll|overlay)/.test(overflowY) && !/(auto|scroll|overlay)/.test(overflow)) {
+        return;
+      }
+      if (style.position === 'fixed') {
         return;
       }
 
       const scrollRange = element.scrollHeight - element.clientHeight;
-      if (scrollRange < 240 || element.clientHeight < 220) {
+      if (scrollRange < MIN_SCROLL_RANGE_PX || element.clientHeight < MIN_ELEMENT_HEIGHT_PX) {
         return;
       }
 
       const rect = element.getBoundingClientRect();
       const visible = computeVisibleRect(rect);
-      if (visible.width < window.innerWidth * 0.35 || visible.height < window.innerHeight * 0.35) {
+      if (
+        visible.width < window.innerWidth * MIN_VISIBLE_FRACTION ||
+        visible.height < window.innerHeight * MIN_VISIBLE_FRACTION
+      ) {
         return;
       }
 
       const visibleArea = visible.width * visible.height;
       const score =
         visibleArea / viewportArea +
-        Math.min(4, scrollRange / Math.max(1, element.clientHeight)) +
-        Math.min(1, element.clientWidth / Math.max(1, window.innerWidth));
+        Math.min(MAX_SCROLL_RANGE_SCORE, scrollRange / Math.max(1, element.clientHeight)) +
+        Math.min(MAX_WIDTH_RATIO_SCORE, element.clientWidth / Math.max(1, window.innerWidth));
 
       if (score > bestScore) {
         bestScore = score;
@@ -386,28 +439,32 @@ declare const __BUILD_ID__: string;
     const animationStyle = document.createElement('style');
     animationStyle.id = '__emeraldpix_pause_animations__';
     animationStyle.textContent =
-      '*,:before,:after{animation:none!important;transition:none!important;scroll-behavior:auto!important;}';
+      '*,::before,::after{animation:none!important;transition:none!important;scroll-behavior:auto!important;}';
     doc.appendChild(animationStyle);
 
     return () => {
-      doc.style.overflow = original.docOverflow;
-      if (body) {
-        body.style.overflowY = original.bodyOverflowY;
-      }
-      hiddenFixedElements.forEach((entry) => {
-        entry.element.style.visibility = entry.visibility;
-        entry.element.style.pointerEvents = entry.pointerEvents;
-      });
-      lazyElements.forEach((entry) => {
-        if (entry.hadLoadingAttribute) {
-          entry.element.setAttribute('loading', entry.loadingValue ?? 'lazy');
-        } else {
-          entry.element.removeAttribute('loading');
+      try {
+        doc.style.overflow = original.docOverflow;
+        if (body) {
+          body.style.overflowY = original.bodyOverflowY;
         }
-      });
-      animationStyle.remove();
-      scrollRoot.scrollTo(original.rootX, original.rootY);
-      window.scrollTo(original.x, original.y);
+        hiddenFixedElements.forEach((entry) => {
+          entry.element.style.visibility = entry.visibility;
+          entry.element.style.pointerEvents = entry.pointerEvents;
+        });
+        lazyElements.forEach((entry) => {
+          if (entry.hadLoadingAttribute) {
+            entry.element.setAttribute('loading', entry.loadingValue ?? 'lazy');
+          } else {
+            entry.element.removeAttribute('loading');
+          }
+        });
+        animationStyle.remove();
+        if (scrollRoot.element?.isConnected) {
+          scrollRoot.scrollTo(original.rootX, original.rootY);
+        }
+        window.scrollTo(original.x, original.y);
+      } catch {}
     };
   }
 
@@ -605,13 +662,16 @@ declare const __BUILD_ID__: string;
 
   function handleRuntimeMessage(
     message: ContentMessage,
-    _sender: chrome.runtime.MessageSender,
+    sender: chrome.runtime.MessageSender,
     sendResponse: (
       response: RuntimeResponse<
         { ready?: true; capturing?: boolean; buildId?: string } | VisibleAreaSelection
       >
     ) => void
   ): boolean {
+    if (sender.id !== chrome.runtime.id) {
+      return false;
+    }
     if (!message || typeof message !== 'object' || !('type' in message)) {
       return false;
     }
@@ -676,8 +736,7 @@ declare const __BUILD_ID__: string;
       const overlay = document.createElement('div');
       const box = document.createElement('div');
       overlay.id = '__emeraldpix_area_overlay__';
-      overlay.style.cssText =
-        'position:fixed;inset:0;z-index:2147483647;cursor:crosshair;user-select:none;touch-action:none;background:rgba(0,0,0,0.12);';
+      overlay.style.cssText = `position:fixed;inset:0;z-index:${OVERLAY_Z_INDEX};cursor:crosshair;user-select:none;touch-action:none;background:rgba(0,0,0,0.12);`;
       box.style.cssText =
         'position:absolute;border:2px solid #10b981;background:rgba(16,185,129,0.14);box-shadow:0 0 0 99999px rgba(0,0,0,0.24);display:none;';
       overlay.appendChild(box);
@@ -741,7 +800,7 @@ declare const __BUILD_ID__: string;
         dragging = false;
         const rect = getRect(event.clientX, event.clientY);
         cleanup();
-        if (rect.width < 8 || rect.height < 8) {
+        if (rect.width < MIN_SELECTION_SIZE_PX || rect.height < MIN_SELECTION_SIZE_PX) {
           reject(new Error('Area selection cancelled.'));
           return;
         }
