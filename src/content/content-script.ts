@@ -89,7 +89,18 @@ declare const __BUILD_ID__: string;
     readMetrics(): PageMetrics;
   }
 
-  let isCapturing = false;
+  // Atomic lock for capture state to prevent race conditions
+  let captureLock = false;
+
+  function tryAcquireCaptureLock(): boolean {
+    if (captureLock) return false;
+    captureLock = true;
+    return true;
+  }
+
+  function releaseCaptureLock(): void {
+    captureLock = false;
+  }
 
   function normalizeOptions(input?: Partial<CaptureOptions>): CaptureOptions {
     const merged = { ...DEFAULT_CAPTURE_OPTIONS, ...(input ?? {}) };
@@ -583,13 +594,17 @@ declare const __BUILD_ID__: string;
       const scrollDeltaX = Math.abs(actualX - x);
       const scrollDeltaY = Math.abs(actualY - y);
 
-      // If scroll position is significantly off, re-scroll and wait again
-      if (scrollDeltaX > 2 || scrollDeltaY > 2) {
+      // If scroll position is significantly off, re-scroll with retry limit
+      let scrollAttempts = 1;
+      const MAX_SCROLL_ATTEMPTS = 3;
+
+      while ((scrollDeltaX > 2 || scrollDeltaY > 2) && scrollAttempts < MAX_SCROLL_ATTEMPTS) {
         console.warn(
-          `[ContentScript] Scroll position mismatch: intended (${x}, ${y}), actual (${actualX}, ${actualY}). Re-scrolling...`
+          `[ContentScript] Scroll position mismatch: intended (${x}, ${y}), actual (${actualX}, ${actualY}). Re-scrolling... (attempt ${scrollAttempts}/${MAX_SCROLL_ATTEMPTS})`
         );
         scrollRoot.scrollTo(x, y);
         await waitForSettledFrame(options);
+        scrollAttempts++;
       }
 
       const currentMetrics = scrollRoot.readMetrics();
@@ -695,7 +710,7 @@ declare const __BUILD_ID__: string;
     if (message.type === 'capture-ping') {
       sendResponse({
         ok: true,
-        data: { ready: true, capturing: isCapturing, buildId: __BUILD_ID__ }
+        data: { ready: true, capturing: captureLock, buildId: __BUILD_ID__ }
       });
       return false;
     }
@@ -716,17 +731,16 @@ declare const __BUILD_ID__: string;
       return false;
     }
 
-    if (isCapturing) {
+    if (!tryAcquireCaptureLock()) {
       sendResponse({ ok: false, error: 'Capture already in progress.' } satisfies RuntimeResponse);
       return false;
     }
 
-    isCapturing = true;
     sendResponse({ ok: true } satisfies RuntimeResponse);
 
     const options = normalizeOptions(message.options);
     void runCapture(message.jobId, options).finally(() => {
-      isCapturing = false;
+      releaseCaptureLock();
     });
 
     return false;
