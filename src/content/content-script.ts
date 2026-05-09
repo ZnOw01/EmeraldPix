@@ -19,7 +19,6 @@ declare const __BUILD_ID__: string;
   };
   const JOB_TIMEOUT_MS = 180_000;
 
-  const SCROLL_PAD = 200;
   const PRE_FLIGHT_STABLE_PASSES = 2;
   const PRE_FLIGHT_MAX_PASSES = 24;
   const PRE_FLIGHT_MAX_DURATION_MS = 20_000;

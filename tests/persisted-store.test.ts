@@ -79,6 +79,45 @@ describe('persisted store', () => {
     expect(idbState.has('downloadOptions')).toBe(false);
   });
 
+  it('does not rewrite equivalent nested values with different object key order', async () => {
+    idbState.set('captureOptions', {
+      nested: {
+        maxCaptureHeightPx: 80000,
+        enableSmartScroll: true
+      }
+    });
+    chromeState.captureOptions = {
+      nested: {
+        enableSmartScroll: true,
+        maxCaptureHeightPx: 80000
+      }
+    };
+    const before = idbState.get('captureOptions');
+
+    const { readPersistedValue } = await import('../src/shared/persisted-store');
+
+    await expect(readPersistedValue('captureOptions')).resolves.toEqual(chromeState.captureOptions);
+    expect(idbState.get('captureOptions')).toBe(before);
+  });
+
+  it('repairs genuinely different nested IndexedDB values', async () => {
+    idbState.set('captureOptions', {
+      nested: {
+        enableSmartScroll: false
+      }
+    });
+    chromeState.captureOptions = {
+      nested: {
+        enableSmartScroll: true
+      }
+    };
+
+    const { readPersistedValue } = await import('../src/shared/persisted-store');
+
+    await readPersistedValue('captureOptions');
+    expect(idbState.get('captureOptions')).toEqual(chromeState.captureOptions);
+  });
+
   it('only clears managed settings keys from chrome.storage', async () => {
     chromeState.captureOptions = { enableSmartScroll: true };
     chromeState.exportOptions = { format: 'png', jpgQuality: 1 };

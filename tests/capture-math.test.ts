@@ -44,6 +44,11 @@ describe('capture-math', () => {
       const stops = generateAxisStops(50, 100);
       expect(stops).toEqual([0, 50]);
     });
+
+    it('normalizes non-finite inputs instead of looping forever', () => {
+      expect(generateAxisStops(Infinity, 100)).toEqual([0]);
+      expect(generateAxisStops(5, Infinity)).toEqual([0, 1, 2, 3, 4, 5]);
+    });
   });
 
   describe('buildCapturePlan', () => {
@@ -83,6 +88,11 @@ describe('capture-math', () => {
     it('handles edge case of exact fit', () => {
       const plan = buildCapturePlan(800, 600, 800, 600);
       expect(plan.length).toBe(1);
+    });
+
+    it('normalizes non-finite dimensions to a bounded single tile', () => {
+      expect(buildCapturePlan(Infinity, 600, 800, 600)).toEqual([[0, 0]]);
+      expect(buildCapturePlan(800, NaN, 800, 600)).toEqual([[0, 0]]);
     });
   });
 });

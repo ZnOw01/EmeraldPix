@@ -1,5 +1,6 @@
 full-page-screen-capture.pem
 full-page-screen-capture.zip
+emeraldpix-v*.zip
 .DS_Store
 Thumbs.db
 dist/
@@ -11,6 +12,7 @@ playwright-report/
 .npm-cache/
 *.log
 logs/
+*.log.*
 
 # Environment files — never commit real secrets
 .env

@@ -6,6 +6,7 @@ import { startFixtureServer } from './test-server';
 
 type RuntimeResponse<T = unknown> = { ok: true; data?: T } | { ok: false; error: string };
 type ActiveTabInfo = { id?: number; url?: string };
+type DownloadedArtifact = { path: string; size: number };
 
 interface ExtensionHarness {
   context: BrowserContext;
@@ -19,8 +20,8 @@ const extensionPath = resolve(process.cwd(), 'dist');
 const requestedBrowserChannel = process.env.E2E_CHROMIUM_CHANNEL?.trim();
 const browserChannel =
   requestedBrowserChannel?.toLowerCase() === 'bundled'
-    ? undefined
-    : requestedBrowserChannel || (process.env.CI ? undefined : 'chrome');
+    ? 'chromium'
+    : requestedBrowserChannel || (process.env.CI ? 'chromium' : 'chrome');
 
 const e2eHeadless = process.env.E2E_HEADLESS === 'true' || process.env.CI === 'true';
 
@@ -28,30 +29,35 @@ async function launchHarness(): Promise<ExtensionHarness> {
   const userDataDir = await mkdtemp(join(tmpdir(), 'screencap-pw-'));
   const downloadsDir = join(userDataDir, 'downloads');
 
-  const context = await chromium.launchPersistentContext(userDataDir, {
-    headless: e2eHeadless,
-    acceptDownloads: true,
-    downloadsPath: downloadsDir,
-    channel: browserChannel,
-    args: [`--disable-extensions-except=${extensionPath}`, `--load-extension=${extensionPath}`]
-  });
+  try {
+    const context = await chromium.launchPersistentContext(userDataDir, {
+      headless: e2eHeadless,
+      acceptDownloads: true,
+      downloadsPath: downloadsDir,
+      channel: browserChannel,
+      args: [`--disable-extensions-except=${extensionPath}`, `--load-extension=${extensionPath}`]
+    });
 
-  let [serviceWorker] = context.serviceWorkers();
-  if (!serviceWorker) {
-    serviceWorker = await context.waitForEvent('serviceworker');
+    let [serviceWorker] = context.serviceWorkers();
+    if (!serviceWorker) {
+      serviceWorker = await context.waitForEvent('serviceworker', { timeout: 15_000 });
+    }
+    const extensionId = serviceWorker.url().split('/')[2];
+
+    const harnessPage = await context.newPage();
+    await harnessPage.goto(`chrome-extension://${extensionId}/test-harness.html`);
+
+    return {
+      context,
+      harnessPage,
+      extensionId,
+      downloadsDir,
+      userDataDir
+    };
+  } catch (error) {
+    await rm(userDataDir, { recursive: true, force: true });
+    throw error;
   }
-  const extensionId = serviceWorker.url().split('/')[2];
-
-  const harnessPage = await context.newPage();
-  await harnessPage.goto(`chrome-extension://${extensionId}/test-harness.html`);
-
-  return {
-    context,
-    harnessPage,
-    extensionId,
-    downloadsDir,
-    userDataDir
-  };
 }
 
 async function closeHarness(harness: ExtensionHarness): Promise<void> {
@@ -163,7 +169,7 @@ async function waitForCaptureState(
 async function waitForDownloadedFile(
   downloadsDir: string,
   timeoutMs = 20_000
-): Promise<{ filename: string; size: number }> {
+): Promise<{ path: string; size: number }> {
   const deadline = Date.now() + timeoutMs;
 
   while (Date.now() < deadline) {
@@ -174,9 +180,10 @@ async function waitForDownloadedFile(
       .filter((name) => !name.endsWith('.crdownload') && !name.endsWith('.tmp'));
 
     for (const filename of files) {
-      const fileStat = await stat(join(downloadsDir, filename));
+      const path = join(downloadsDir, filename);
+      const fileStat = await stat(path);
       if (fileStat.size > 0) {
-        return { filename, size: fileStat.size };
+        return { path, size: fileStat.size };
       }
     }
 
@@ -202,7 +209,7 @@ async function readPngDimensions(filePath: string): Promise<{ width: number; hei
 async function runCaptureAndAssertDownload(
   harness: ExtensionHarness,
   fixtureUrl: string
-): Promise<{ filename: string; size: number }> {
+): Promise<DownloadedArtifact> {
   const page = await harness.context.newPage();
   try {
     await page.goto(fixtureUrl);
@@ -225,7 +232,7 @@ async function runCaptureAndAssertDownload(
   }
 }
 
-test.describe('ScreenCap extension e2e', () => {
+test.describe('EmeraldPix extension e2e', () => {
   test.describe.configure({ timeout: 180_000 });
 
   test('loads popup UI after Svelte migration', async () => {
@@ -233,8 +240,8 @@ test.describe('ScreenCap extension e2e', () => {
     try {
       const popupPage = await harness.context.newPage();
       await popupPage.goto(`chrome-extension://${harness.extensionId}/popup.html`);
-      await expect(popupPage.getByText('ScreenCap', { exact: true })).toHaveCount(1);
-      await expect(popupPage.getByRole('button', { name: /capture full page/i })).toHaveCount(1);
+      await expect(popupPage.getByText('EmeraldPix', { exact: true })).toHaveCount(1);
+      await expect(popupPage.getByRole('button', { name: /^page$/i })).toHaveCount(1);
     } finally {
       await closeHarness(harness);
     }
@@ -246,12 +253,10 @@ test.describe('ScreenCap extension e2e', () => {
     try {
       const fixtureUrl = `${fixture.origin}/long.html`;
       const downloaded = await runCaptureAndAssertDownload(harness, fixtureUrl);
-      expect(downloaded.filename.toLowerCase()).toContain('screenshot_');
-      expect(downloaded.filename.toLowerCase().endsWith('.png')).toBeTruthy();
       expect(downloaded.size).toBeGreaterThan(0);
 
       // The fixture has 14 × 500 px sections — the PNG must be taller than a single viewport
-      const dimensions = await readPngDimensions(join(harness.downloadsDir, downloaded.filename));
+      const dimensions = await readPngDimensions(downloaded.path);
       expect(dimensions.height).toBeGreaterThan(2000);
       expect(dimensions.width).toBeGreaterThan(400);
     } finally {
@@ -266,8 +271,10 @@ test.describe('ScreenCap extension e2e', () => {
     try {
       const fixtureUrl = `${fixture.origin}/infinite.html`;
       const downloaded = await runCaptureAndAssertDownload(harness, fixtureUrl);
-      expect(downloaded.filename.toLowerCase().endsWith('.png')).toBeTruthy();
       expect(downloaded.size).toBeGreaterThan(0);
+      const dimensions = await readPngDimensions(downloaded.path);
+      expect(dimensions.height).toBeGreaterThan(1000);
+      expect(dimensions.width).toBeGreaterThan(400);
     } finally {
       await closeHarness(harness);
       await new Promise<void>((resolve) => fixture.server.close(() => resolve()));
@@ -280,9 +287,9 @@ test.describe('ScreenCap extension e2e', () => {
     try {
       const fixtureUrl = `${fixture.origin}/container-scroll.html`;
       const downloaded = await runCaptureAndAssertDownload(harness, fixtureUrl);
-      expect(downloaded.filename.toLowerCase().endsWith('.png')).toBeTruthy();
+      expect(downloaded.size).toBeGreaterThan(0);
 
-      const dimensions = await readPngDimensions(join(harness.downloadsDir, downloaded.filename));
+      const dimensions = await readPngDimensions(downloaded.path);
       expect(dimensions.height).toBeGreaterThan(2000);
       expect(dimensions.width).toBeGreaterThan(500);
     } finally {

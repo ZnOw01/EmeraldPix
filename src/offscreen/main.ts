@@ -86,11 +86,27 @@ const jobs = new Map<string, OffscreenJob>();
 const jobTimestamps = new Map<string, number>();
 let jsPdfPromise: Promise<JsPdfModule> | null = null;
 
+function releaseSliceResources(slice: ScreenshotSlice): void {
+  slice.canvas.width = 0;
+  slice.canvas.height = 0;
+}
+
+function releaseJobResources(job: OffscreenJob): void {
+  for (const slice of job.slices) {
+    releaseSliceResources(slice);
+  }
+  job.slices = [];
+}
+
 /** Purge jobs older than TTL to prevent memory leaks */
 function purgeStaleJobs(): void {
   const now = Date.now();
   for (const [id, timestamp] of jobTimestamps) {
     if (now - timestamp > JOB_TTL_MS) {
+      const job = jobs.get(id);
+      if (job) {
+        releaseJobResources(job);
+      }
       jobs.delete(id);
       jobTimestamps.delete(id);
     }
@@ -126,15 +142,8 @@ function stopStalePurgeInterval(): void {
 // Cleanup function for when offscreen document is being destroyed
 function cleanupOffscreen(): void {
   stopStalePurgeInterval();
-  // Clear all jobs and their canvas resources
-  for (const [jobId, job] of jobs) {
-    for (const slice of job.slices) {
-      // Force canvas cleanup by nulling dimensions
-      if (slice.canvas instanceof OffscreenCanvas) {
-        slice.canvas.width = 0;
-        slice.canvas.height = 0;
-      }
-    }
+  for (const job of jobs.values()) {
+    releaseJobResources(job);
   }
   jobs.clear();
   jobTimestamps.clear();
@@ -463,14 +472,7 @@ async function exportJob(
     captures = await exportAsRaster(job.slices, options);
   }
 
-  // Cleanup canvas resources before deleting job
-  for (const slice of job.slices) {
-    if (slice.canvas instanceof OffscreenCanvas) {
-      slice.canvas.width = 0;
-      slice.canvas.height = 0;
-    }
-  }
-
+  releaseJobResources(job);
   jobs.delete(message.jobId);
   jobTimestamps.delete(message.jobId);
 
@@ -505,18 +507,26 @@ async function exportVisibleArea(
       bottom: cropHeight
     };
 
-    const captures =
-      options.format === 'pdf'
-        ? await exportAsPdf([slice])
-        : await exportAsRaster([slice], options);
+    try {
+      const captures =
+        options.format === 'pdf'
+          ? await exportAsPdf([slice])
+          : await exportAsRaster([slice], options);
 
-    return { ok: true, data: { captures } };
+      return { ok: true, data: { captures } };
+    } finally {
+      releaseSliceResources(slice);
+    }
   } finally {
     image.close();
   }
 }
 
 function clearJob(message: ClearMessage): RuntimeResponse {
+  const job = jobs.get(message.jobId);
+  if (job) {
+    releaseJobResources(job);
+  }
   jobs.delete(message.jobId);
   jobTimestamps.delete(message.jobId);
   purgeStaleJobs();

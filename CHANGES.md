@@ -1,5 +1,20 @@
 # Changelog
 
+## 3.5.1 - 2026-05-09
+
+### Changed
+
+- Improved capture-plan validation so non-finite page or viewport dimensions cannot create unbounded tile plans.
+- Hardened offscreen canvas cleanup for exported, cleared, and stale capture jobs.
+- Made persisted settings comparison stable for nested values without relying on JSON key order.
+- Updated E2E coverage for the current EmeraldPix popup copy and bundled Chromium execution.
+
+### Fixed
+
+- Fixed lint drift from an unused content-script constant.
+- Fixed E2E startup hangs by using the bundled Chromium channel in CI-style runs and adding a bounded service-worker wait.
+- Fixed E2E download assertions to validate PNG output by file contents instead of Chromium's temporary download filename.
+
 ## 3.4.0 - 2026-03-14
 
 ### Added
