@@ -1,54 +1,54 @@
 {
-  "name": "emeraldpix",
-  "version": "3.5.1",
-  "private": true,
-  "license": "GPL-3.0-only",
-  "type": "module",
-  "scripts": {
-    "dev": "vite",
-    "build": "npm run typecheck && vite build",
-    "build:fast": "vite build",
-    "build:watch": "cross-env VITE_BUILD_WATCH=true vite build --watch --mode development",
-    "dev:ext": "npm run build:watch",
-    "typecheck": "tsc --noEmit",
-    "lint": "eslint \"src/**/*.ts\" \"*.config.ts\"",
-    "lint:fix": "eslint --fix \"src/**/*.ts\" \"*.config.ts\"",
-    "test": "vitest run",
-    "test:coverage": "vitest run --coverage",
-    "test:e2e": "playwright test",
-    "test:all": "npm run test && npm run test:e2e",
-    "format": "prettier --check .",
-    "format:write": "prettier --write ."
-  },
-  "devDependencies": {
-    "@playwright/test": "^1.58.2",
-    "@sveltejs/vite-plugin-svelte": "^6.2.4",
-    "@types/chrome": "^0.0.322",
-    "@types/node": "^22.13.5",
-    "@typescript-eslint/eslint-plugin": "^8.56.0",
-    "@typescript-eslint/parser": "^8.56.0",
-    "@vitest/coverage-v8": "^3.2.4",
-    "cross-env": "^7.0.3",
-    "eslint": "^9.39.2",
-    "eslint-config-prettier": "^10.1.8",
-    "prettier": "^3.5.1",
-    "rollup-plugin-visualizer": "^6.0.5",
-    "svelte": "^5.50.0",
-    "svelte-eslint-parser": "^1.4.1",
-    "typescript": "^5.7.3",
-    "vite": "^6.2.0",
-    "vitest": "^3.2.4"
-  },
-  "dependencies": {
-    "idb": "^8.0.3",
-    "jspdf": "^4.2.1"
-  },
-  "overrides": {
-    "devalue": "^5.6.4",
-    "esbuild": "^0.25.0",
-    "flatted": "^3.4.1"
-  },
-  "engines": {
-    "node": ">=22"
-  }
+	"name": "emeraldpix",
+	"version": "3.5.3",
+	"private": true,
+	"license": "GPL-3.0-only",
+	"type": "module",
+	"scripts": {
+		"dev": "vite",
+		"build": "npm run typecheck && vite build",
+		"build:fast": "vite build",
+		"build:watch": "cross-env VITE_BUILD_WATCH=true vite build --watch --mode development",
+		"dev:ext": "npm run build:watch",
+		"typecheck": "tsc --noEmit",
+		"lint": "eslint \"src/**/*.ts\" \"*.config.ts\"",
+		"lint:fix": "eslint --fix \"src/**/*.ts\" \"*.config.ts\"",
+		"test": "vitest run",
+		"test:coverage": "vitest run --coverage",
+		"test:e2e": "playwright test",
+		"test:all": "npm run test && npm run test:e2e",
+		"format": "prettier --check .",
+		"format:write": "prettier --write ."
+	},
+	"devDependencies": {
+		"@playwright/test": "^1.58.2",
+		"@sveltejs/vite-plugin-svelte": "^6.2.4",
+		"@types/chrome": "^0.0.322",
+		"@types/node": "^22.13.5",
+		"@typescript-eslint/eslint-plugin": "^8.56.0",
+		"@typescript-eslint/parser": "^8.56.0",
+		"@vitest/coverage-v8": "^3.2.4",
+		"cross-env": "^7.0.3",
+		"eslint": "^9.39.2",
+		"eslint-config-prettier": "^10.1.8",
+		"prettier": "^3.5.1",
+		"rollup-plugin-visualizer": "^6.0.5",
+		"svelte": "^5.50.0",
+		"svelte-eslint-parser": "^1.4.1",
+		"typescript": "^5.7.3",
+		"vite": "^6.2.0",
+		"vitest": "^3.2.4"
+	},
+	"dependencies": {
+		"idb": "^8.0.3",
+		"jspdf": "^4.2.1"
+	},
+	"overrides": {
+		"devalue": "^5.6.4",
+		"esbuild": "^0.25.0",
+		"flatted": "^3.4.1"
+	},
+	"engines": {
+		"node": ">=22"
+	}
 }

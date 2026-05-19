@@ -1,201 +1,178 @@
-import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
-import type { CaptureOptions, DownloadOptions, ExportOptions } from './messages';
-import { getErrorMessage } from './utils';
-
-interface PersistedState {
-  captureOptions: CaptureOptions;
-  exportOptions: ExportOptions;
-  downloadOptions: DownloadOptions;
-}
-
-type PersistedKey = keyof PersistedState;
-export const PERSISTED_KEYS: PersistedKey[] = [
-  'captureOptions',
-  'exportOptions',
-  'downloadOptions'
-] as const;
-
-interface EmeraldPixDbSchema extends DBSchema {
-  settings: {
-    key: PersistedKey;
-    value: PersistedState[PersistedKey];
-  };
-}
-
-const DB_NAME = 'emeraldpix-settings';
-const STORE_NAME = 'settings';
-const DB_VERSION = 1;
-
-let dbPromise: Promise<IDBPDatabase<EmeraldPixDbSchema>> | null = null;
+import { getErrorMessage } from "./utils";
+import type {
+	PersistedKey,
+	PersistedState,
+	StorageStrategy,
+} from "./storage-strategies";
+import {
+	ChromeStorageStrategy,
+	IndexedDbStrategy,
+	PERSISTED_KEYS,
+} from "./storage-strategies";
 
 function logStorageWarning(scope: string, error: unknown): void {
-  console.warn(`[PersistedStore] ${scope}: ${getErrorMessage(error)}`);
-}
-
-async function getDb(): Promise<IDBPDatabase<EmeraldPixDbSchema>> {
-  if (!dbPromise) {
-    dbPromise = openDB<EmeraldPixDbSchema>(DB_NAME, DB_VERSION, {
-      upgrade(db) {
-        if (!db.objectStoreNames.contains(STORE_NAME)) {
-          db.createObjectStore(STORE_NAME);
-        }
-      }
-    }).catch((error) => {
-      dbPromise = null;
-      throw error;
-    });
-  }
-  return dbPromise;
-}
-
-async function readFromIdb<K extends PersistedKey>(key: K): Promise<PersistedState[K] | undefined> {
-  const db = await getDb();
-  return (await db.get(STORE_NAME, key)) as PersistedState[K] | undefined;
-}
-
-async function writeToIdb(values: Partial<PersistedState>): Promise<void> {
-  const entries = Object.entries(values) as Array<[PersistedKey, PersistedState[PersistedKey]]>;
-  if (!entries.length) {
-    return;
-  }
-  const db = await getDb();
-  const tx = db.transaction(STORE_NAME, 'readwrite');
-  for (const [key, value] of entries) {
-    await tx.store.put(value, key);
-  }
-  await tx.done;
-}
-
-async function clearIdb(): Promise<void> {
-  const db = await getDb();
-  await db.clear(STORE_NAME);
-}
-
-async function deleteFromIdb(keys: PersistedKey[]): Promise<void> {
-  if (!keys.length) {
-    return;
-  }
-
-  const db = await getDb();
-  const tx = db.transaction(STORE_NAME, 'readwrite');
-  for (const key of keys) {
-    await tx.store.delete(key);
-  }
-  await tx.done;
+	console.warn(`[PersistedStore] ${scope}: ${getErrorMessage(error)}`);
 }
 
 function arePersistedValuesEqual(left: unknown, right: unknown): boolean {
-  if (left === right) return true;
-  if (left == null || right == null) return left === right;
-  if (Array.isArray(left) || Array.isArray(right)) {
-    if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) {
-      return false;
-    }
-    return left.every((value, index) => arePersistedValuesEqual(value, right[index]));
-  }
-  if (typeof left !== 'object' || typeof right !== 'object') return false;
+	if (left === right) return true;
+	if (left == null || right == null) return left === right;
+	if (Array.isArray(left) || Array.isArray(right)) {
+		if (
+			!Array.isArray(left) ||
+			!Array.isArray(right) ||
+			left.length !== right.length
+		) {
+			return false;
+		}
+		return left.every((value, index) =>
+			arePersistedValuesEqual(value, right[index]),
+		);
+	}
+	if (typeof left !== "object" || typeof right !== "object") return false;
 
-  const leftKeys = Object.keys(left);
-  const rightKeys = Object.keys(right);
-  if (leftKeys.length !== rightKeys.length) return false;
-  for (const key of leftKeys) {
-    if (!(key in (right as object))) return false;
-    if (
-      !arePersistedValuesEqual(
-        (left as Record<string, unknown>)[key],
-        (right as Record<string, unknown>)[key]
-      )
-    ) {
-      return false;
-    }
-  }
-  return true;
+	const leftKeys = Object.keys(left);
+	const rightKeys = Object.keys(right);
+	if (leftKeys.length !== rightKeys.length) return false;
+	for (const key of leftKeys) {
+		if (!(key in (right as object))) return false;
+		if (
+			!arePersistedValuesEqual(
+				(left as Record<string, unknown>)[key],
+				(right as Record<string, unknown>)[key],
+			)
+		) {
+			return false;
+		}
+	}
+	return true;
 }
 
-async function syncIdbValue<K extends PersistedKey>(
-  key: K,
-  value: PersistedState[K] | undefined
-): Promise<void> {
-  if (value === undefined) {
-    await deleteFromIdb([key]);
-    return;
-  }
+// ---- PersistedStore (coordinator with dual persistence) ----
 
-  await writeToIdb({ [key]: value } as Pick<PersistedState, K>);
+class PersistedStore {
+	constructor(
+		private primary: StorageStrategy,
+		private mirror: StorageStrategy,
+	) {}
+
+	async read<K extends PersistedKey>(
+		key: K,
+	): Promise<PersistedState[K] | undefined> {
+		let idbValue: PersistedState[K] | undefined;
+
+		try {
+			idbValue = await this.mirror.read(key);
+		} catch (error) {
+			logStorageWarning(`IndexedDB read failed for key "${key}"`, error);
+		}
+
+		try {
+			const value = await this.primary.read(key);
+
+			if (!arePersistedValuesEqual(idbValue, value)) {
+				try {
+					if (value === undefined) {
+						await this.mirror.remove([key]);
+					} else {
+						await this.mirror.write({ [key]: value } as Pick<
+							PersistedState,
+							K
+						>);
+					}
+				} catch (error) {
+					logStorageWarning(`IndexedDB sync failed for key "${key}"`, error);
+				}
+			}
+
+			return value;
+		} catch (error) {
+			logStorageWarning(
+				`chrome.storage fallback read failed for key "${key}"`,
+				error,
+			);
+		}
+
+		return idbValue;
+	}
+
+	async write(values: Partial<PersistedState>): Promise<void> {
+		try {
+			await this.primary.write(values);
+		} catch (error) {
+			logStorageWarning("chrome.storage write failed", error);
+			throw error;
+		}
+
+		try {
+			await this.mirror.write(values);
+		} catch (error) {
+			logStorageWarning("IndexedDB mirror write failed", error);
+		}
+	}
+
+	async clear(): Promise<void> {
+		try {
+			await this.primary.clear();
+		} catch (error) {
+			logStorageWarning("chrome.storage clear failed", error);
+			throw error;
+		}
+
+		try {
+			await this.mirror.clear();
+		} catch (error) {
+			logStorageWarning("IndexedDB clear failed", error);
+		}
+	}
+
+	async remove(keys: PersistedKey[]): Promise<void> {
+		try {
+			await this.primary.remove(keys);
+		} catch (error) {
+			logStorageWarning("chrome.storage delete failed", error);
+			throw error;
+		}
+
+		try {
+			await this.mirror.remove(keys);
+		} catch (error) {
+			logStorageWarning("IndexedDB delete failed", error);
+		}
+	}
 }
+
+// ---- Singleton instance (production) ----
+
+const defaultStore = new PersistedStore(
+	new ChromeStorageStrategy(),
+	new IndexedDbStrategy(),
+);
+
+// ---- Public API (unchanged) ----
 
 export async function readPersistedValue<K extends PersistedKey>(
-  key: K
+	key: K,
 ): Promise<PersistedState[K] | undefined> {
-  let idbValue: PersistedState[K] | undefined;
-
-  try {
-    idbValue = await readFromIdb(key);
-  } catch (error) {
-    logStorageWarning(`IndexedDB read failed for key "${key}"`, error);
-  }
-
-  try {
-    const result = await chrome.storage.local.get(key);
-    const value = result[key] as PersistedState[K] | undefined;
-
-    if (!arePersistedValuesEqual(idbValue, value)) {
-      try {
-        await syncIdbValue(key, value);
-      } catch (error) {
-        logStorageWarning(`IndexedDB sync failed for key "${key}"`, error);
-      }
-    }
-
-    return value;
-  } catch (error) {
-    logStorageWarning(`chrome.storage fallback read failed for key "${key}"`, error);
-  }
-
-  return idbValue;
+	return defaultStore.read(key);
 }
 
-export async function writePersistedValues(values: Partial<PersistedState>): Promise<void> {
-  try {
-    await chrome.storage.local.set(values as Record<string, unknown>);
-  } catch (error) {
-    logStorageWarning('chrome.storage write failed', error);
-    throw error;
-  }
-
-  try {
-    await writeToIdb(values);
-  } catch (error) {
-    logStorageWarning('IndexedDB mirror write failed', error);
-  }
+export async function writePersistedValues(
+	values: Partial<PersistedState>,
+): Promise<void> {
+	return defaultStore.write(values);
 }
 
 export async function clearPersistedValues(): Promise<void> {
-  try {
-    await chrome.storage.local.remove(PERSISTED_KEYS);
-  } catch (error) {
-    logStorageWarning('chrome.storage clear failed', error);
-    throw error;
-  }
-
-  try {
-    await clearIdb();
-  } catch (error) {
-    logStorageWarning('IndexedDB clear failed', error);
-  }
+	return defaultStore.clear();
 }
 
-export async function removePersistedValues(keys: PersistedKey[]): Promise<void> {
-  try {
-    await chrome.storage.local.remove(keys);
-  } catch (error) {
-    logStorageWarning('chrome.storage delete failed', error);
-    throw error;
-  }
-
-  try {
-    await deleteFromIdb(keys);
-  } catch (error) {
-    logStorageWarning('IndexedDB delete failed', error);
-  }
+export async function removePersistedValues(
+	keys: PersistedKey[],
+): Promise<void> {
+	return defaultStore.remove(keys);
 }
+
+// Re-export for consumers
+export { PERSISTED_KEYS, arePersistedValuesEqual };
+export type { PersistedKey, PersistedState, StorageStrategy };
