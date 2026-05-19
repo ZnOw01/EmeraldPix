@@ -1,6 +1,20 @@
 # Changelog
 
-## 3.5.1 - 2026-05-09
+## 3.5.3 - 2026-05-19
+
+### Added
+- Improved scroll detection for complex pages (Google Drive) using ARIA roles and extended selectors.
+- Intelligent blank-frame detection in the capture pipeline with automatic retry logic.
+
+### Changed
+- UI: Completely overhauled design with "Premium Emerald" aesthetics, including glassmorphism, mesh gradients, and sequential entry animations.
+- UI: Refined status panel and progress bar with pulse/shimmer effects.
+- Security: Updated dependencies to resolve high-severity vulnerabilities (CVEs).
+
+### Fixed
+- Fixed critical TypeScript errors in `page-scanner.ts`, `canvas-compositor.ts`, and `export-engine.ts` preventing production builds.
+- Fixed `actualY is not defined` runtime error in the content script due to minification scoping issues.
+
 
 ### Changed
 
